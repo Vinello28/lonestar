@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#faf3e6" stroke="#9e5a20" stroke-width="2.4" />
+  <circle cx="17" cy="24" r="6.8" fill="#231f1b" />
+  <circle cx="47" cy="24" r="6.8" fill="#231f1b" />
+  <circle cx="17.5" cy="24.5" r="2.7" fill="#463e35" />
+  <circle cx="46.5" cy="24.5" r="2.7" fill="#463e35" />
+  <ellipse cx="32" cy="39.5" rx="18.5" ry="16.2" fill="#fffdf8" stroke="#231f1b" stroke-width="2.4" />
+  <ellipse cx="19.5" cy="43.5" rx="3.1" ry="1.8" fill="#e89b7e" opacity="0.65" />
+  <ellipse cx="44.5" cy="43.5" rx="3.1" ry="1.8" fill="#e89b7e" opacity="0.65" />
+  <ellipse cx="23.8" cy="37.2" rx="5.2" ry="6.1" transform="rotate(-14 23.8 37.2)" fill="#231f1b" />
+  <ellipse cx="40.2" cy="37.2" rx="5.2" ry="6.1" transform="rotate(14 40.2 37.2)" fill="#231f1b" />
+  <circle cx="24.4" cy="36.2" r="2.1" fill="#fffdf8" />
+  <circle cx="39.6" cy="36.2" r="2.1" fill="#fffdf8" />
+  <circle cx="25.0" cy="36.6" r="1.0" fill="#231f1b" />
+  <circle cx="39.0" cy="36.6" r="1.0" fill="#231f1b" />
+  <circle cx="23.7" cy="35.3" r="0.85" fill="#ffffff" />
+  <circle cx="40.3" cy="35.3" r="0.85" fill="#ffffff" />
+  <ellipse cx="32" cy="42.8" rx="3.3" ry="2.2" fill="#231f1b" />
+  <path d="M 27.6 46.8 Q 30 49.4 32 46.8 Q 34 49.4 36.4 46.8" fill="none" stroke="#231f1b" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M 18 23.5 L 21.8 9.2 Q 26.8 6.4 32 9.4 Q 37.2 6.4 42.2 9.2 L 46 23.5 Z" fill="#c27430" stroke="#592e11" stroke-width="2.2" stroke-linejoin="round" />
+  <path d="M 24.5 11.5 Q 32 13.8 39.5 11.5" fill="none" stroke="#e29c55" stroke-width="1.6" stroke-linecap="round" />
+  <path d="M 18.8 20.5 Q 32 23.0 45.2 20.5 L 46.2 24.5 Q 32 27.2 17.8 24.5 Z" fill="#5a2e14" />
+  <path d="M 7.5 23.2 Q 19 29.8 32 28.4 Q 45 29.8 56.5 23.2 Q 52.5 20.4 45.8 22.8 Q 32 26.2 18.2 22.8 Q 11.5 20.4 7.5 23.2 Z" fill="#ab5f21" stroke="#592e11" stroke-width="2.1" stroke-linejoin="round" />
+  <polygon points="32,16.2 33.4,19.4 36.8,19.6 34.1,21.8 35.0,25.0 32,23.2 29.0,25.0 29.9,21.8 27.2,19.6 30.6,19.4" fill="#f5c249" stroke="#592e11" stroke-width="0.9" stroke-linejoin="round" />
+</svg>

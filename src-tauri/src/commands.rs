@@ -1,8 +1,26 @@
 use lonestar_core::application::{ModelService, ModelStats, PiStarInteropPort};
 use lonestar_core::domain::{DiagramModel, LinkKind, ValidationIssue};
 use lonestar_core::infrastructure::{builtin_template, PiStarJsonAdapter};
+use serde::Serialize;
 use std::fs;
 use std::path::Path;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppRuntimeInfo {
+    pub version: String,
+    pub platform: String,
+    pub arch: String,
+}
+
+#[tauri::command]
+pub fn get_app_info(app: tauri::AppHandle) -> AppRuntimeInfo {
+    AppRuntimeInfo {
+        version: app.package_info().version.to_string(),
+        platform: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+    }
+}
 
 #[tauri::command]
 pub fn get_initial_model() -> DiagramModel {

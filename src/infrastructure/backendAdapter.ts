@@ -18,7 +18,30 @@ async function tauriInvoke<T>(command: string, args?: Record<string, unknown>): 
   return invoke<T>(command, args);
 }
 
+export interface AppRuntimeInfo {
+  version: string;
+  platform: string;
+  arch: string;
+}
+
 export const backendAdapter = {
+  async getAppInfo(): Promise<AppRuntimeInfo> {
+    if (isTauriRuntime()) {
+      return tauriInvoke<AppRuntimeInfo>('get_app_info');
+    }
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent.toLowerCase() : '';
+    const platform = ua.includes('win')
+      ? 'windows'
+      : ua.includes('mac') || ua.includes('darwin')
+        ? 'macos'
+        : 'linux';
+    return {
+      version: '1.0.0',
+      platform,
+      arch: 'web',
+    };
+  },
+
   async loadInitialModel(): Promise<DiagramModel> {
     if (isTauriRuntime()) {
       return tauriInvoke<DiagramModel>('get_initial_model');
@@ -92,7 +115,9 @@ export const backendAdapter = {
     } else {
       const mime = extensions.includes('svg')
         ? 'image/svg+xml;charset=utf-8'
-        : 'application/json;charset=utf-8';
+        : extensions.includes('txt')
+          ? 'text/plain;charset=utf-8'
+          : 'application/json;charset=utf-8';
       const blob = new Blob([contents], { type: mime });
       triggerBrowserDownload(defaultFilename, blob);
     }
@@ -104,7 +129,7 @@ export const backendAdapter = {
     const { open } = await import('@tauri-apps/plugin-dialog');
     const selected = await open({
       multiple: false,
-      filters: [{ name: 'i* / LoneStar JSON', extensions: ['json'] }],
+      filters: [{ name: 'i* 2.0 Model (.json, .txt)', extensions: ['json', 'txt', 'istar'] }],
     });
     if (!selected || typeof selected !== 'string') return null;
     return tauriInvoke<string>('read_file_from_disk', { path: selected });

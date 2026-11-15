@@ -46,16 +46,30 @@ interface PiStarLink {
   label?: string;
 }
 
+interface PiStarDisplayEntry {
+  collapsed?: boolean;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+}
+
 interface PiStarDocument {
   actors: PiStarActor[];
   orphans: PiStarNode[];
   dependencies: PiStarDependency[];
   links: PiStarLink[];
-  display: Record<string, { collapsed?: boolean; width?: number; height?: number }>;
+  display: Record<string, PiStarDisplayEntry>;
   tool: string;
   istar: string;
   saveDate?: string;
   name?: string;
+  diagram?: {
+    name?: string;
+    width?: number;
+    height?: number;
+    customProperties?: Record<string, unknown>;
+  };
 }
 
 function actorKindToPiStar(kind: ActorKind): string {
@@ -233,8 +247,345 @@ export function exportModelToLoneStarJson(model: DiagramModel): string {
   return JSON.stringify(model, null, 2);
 }
 
-export function importAnyJsonModel(rawJson: string): DiagramModel {
-  const parsed = JSON.parse(rawJson) as Record<string, unknown>;
+function normalizeCustomProps(
+  raw?: Record<string, unknown>,
+): Record<string, string> {
+  if (!raw) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v === null || v === undefined) out[k] = '';
+    else if (typeof v === 'string') out[k] = v;
+    else out[k] = String(v);
+  }
+  return out;
+}
+
+function stripDataPrefix(raw: string): string {
+  const noBom = raw.replace(/^\uFEFF/, '').trim();
+  if (noBom.startsWith('data:')) {
+    const commaIdx = noBom.indexOf(',');
+    if (commaIdx !== -1) return noBom.slice(commaIdx + 1).trim();
+  }
+  return noBom;
+}
+
+function layoutImportedModel(model: DiagramModel): void {
+  if (model.actors.length === 0) return;
+  const cols = Math.max(1, Math.ceil(Math.sqrt(model.actors.length)));
+  const colGap = 420;
+  const rowGap = 380;
+
+  model.actors.forEach((actor, idx) => {
+    const col = idx % cols;
+    const row = Math.floor(idx / cols);
+    actor.x = 100 + col * colGap;
+    actor.y = 100 + row * rowGap;
+
+    const inner = model.elements.filter((e) => e.actorId === actor.id);
+    if (inner.length === 0) return;
+    const innerCols = Math.max(1, Math.ceil(Math.sqrt(inner.length)));
+    const innerRows = Math.ceil(inner.length / innerCols);
+    actor.width = Math.max(280, innerCols * 150 + 80);
+    actor.height = Math.max(240, innerRows * 84 + 95);
+
+    inner.forEach((el, i) => {
+      const ic = i % innerCols;
+      const ir = Math.floor(i / innerCols);
+      el.x = actor.x + 40 + ic * 150;
+      el.y = actor.y + 72 + ir * 84;
+    });
+  });
+
+  model.dependencies.forEach((dep) => {
+    const depEl = dep.dependerElementId
+      ? model.elements.find((e) => e.id === dep.dependerElementId)
+      : undefined;
+    const depActor = model.actors.find((a) => a.id === dep.dependerActorId);
+    const eeEl = dep.dependeeElementId
+      ? model.elements.find((e) => e.id === dep.dependeeElementId)
+      : undefined;
+    const eeActor = model.actors.find((a) => a.id === dep.dependeeActorId);
+    const sx = depEl
+      ? depEl.x + depEl.width / 2
+      : depActor
+        ? depActor.x + depActor.width / 2
+        : 0;
+    const sy = depEl
+      ? depEl.y + depEl.height / 2
+      : depActor
+        ? depActor.y + depActor.height / 2
+        : 0;
+    const ex = eeEl
+      ? eeEl.x + eeEl.width / 2
+      : eeActor
+        ? eeActor.x + eeActor.width / 2
+        : 0;
+    const ey = eeEl
+      ? eeEl.y + eeEl.height / 2
+      : eeActor
+        ? eeActor.y + eeActor.height / 2
+        : 0;
+    dep.x = (sx + ex) / 2 - 55;
+    dep.y = (sy + ey) / 2 - 22;
+  });
+}
+
+function parseLinkWord(raw: string): LinkKind {
+  const w = raw.trim().toLowerCase();
+  if (w === 'isa' || w === 'is-a' || w === 'is_a') return { kind: 'isA' };
+  if (w.startsWith('participates')) return { kind: 'participatesIn' };
+  if (w === 'or' || w === 'orrefinement' || w === 'or-refinement') {
+    return { kind: 'orRefinement' };
+  }
+  if (w === 'neededby' || w === 'needed-by' || w === 'needed_by') {
+    return { kind: 'neededBy' };
+  }
+  if (w === 'qualification' || w === 'qualifies') return { kind: 'qualification' };
+  if (w === 'make' || w === 'help' || w === 'hurt' || w === 'break') {
+    return { kind: 'contribution', value: w };
+  }
+  if (w.startsWith('contribution')) {
+    const match = /\(([^)]+)\)/.exec(w);
+    const val = match?.[1]?.trim();
+    const valid: ContributionValue =
+      val === 'make' || val === 'help' || val === 'hurt' || val === 'break'
+        ? val
+        : 'help';
+    return { kind: 'contribution', value: valid };
+  }
+  return { kind: 'andRefinement' };
+}
+
+function parseElementWord(raw: string): ElementKind {
+  const w = raw.trim().toLowerCase();
+  if (w === 'quality' || w === 'softgoal') return 'quality';
+  if (w === 'task') return 'task';
+  if (w === 'resource') return 'resource';
+  return 'goal';
+}
+
+function importTextualIstarTxt(raw: string): DiagramModel {
+  const model: DiagramModel = {
+    id: 'imported-txt',
+    name: 'Imported i* 2.0 (.txt)',
+    version: '2.0',
+    actors: [],
+    elements: [],
+    links: [],
+    dependencies: [],
+    metadata: {
+      author: '',
+      description: 'Imported from i* 2.0 .txt notation',
+      createdAt: '',
+      updatedAt: new Date().toISOString(),
+    },
+  };
+
+  const actorByName = new Map<string, string>();
+  const elementByName = new Map<string, string>();
+  let currentActorId: string | null = null;
+  let actorSeq = 0;
+  let elSeq = 0;
+  let linkSeq = 0;
+  let depSeq = 0;
+
+  const resolveNode = (token: string): string | undefined => {
+    const clean = token.trim().toLowerCase();
+    if (clean.includes('.')) {
+      const part = clean.split('.')[1]?.trim();
+      if (part && elementByName.has(part)) return elementByName.get(part);
+    }
+    return elementByName.get(clean) ?? actorByName.get(clean);
+  };
+
+  const resolveEndpoint = (
+    token: string,
+  ): { actorId?: string; elementId: string | null } => {
+    const clean = token.trim().toLowerCase();
+    if (clean.includes('.')) {
+      const [aName, eName] = clean.split('.').map((s) => s.trim());
+      const aId = actorByName.get(aName);
+      const found = model.elements.find(
+        (el) =>
+          el.name.toLowerCase() === eName && (!aId || el.actorId === aId),
+      );
+      return { actorId: aId ?? found?.actorId ?? undefined, elementId: found?.id ?? null };
+    }
+    const aId = actorByName.get(clean);
+    if (aId) return { actorId: aId, elementId: null };
+    const eId = elementByName.get(clean);
+    if (eId) {
+      const el = model.elements.find((item) => item.id === eId);
+      return { actorId: el?.actorId ?? undefined, elementId: eId };
+    }
+    return { elementId: null };
+  };
+
+  for (const rawLine of raw.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+
+    const titleMatch = /^(?:name|model)\s*:\s*(.+)$/i.exec(line);
+    if (titleMatch) {
+      model.name = titleMatch[1].trim();
+      continue;
+    }
+
+    const actorMatch = /^(actor|agent|role)\s*:\s*(.+)$/i.exec(line);
+    if (actorMatch) {
+      const decl = actorMatch[1].toLowerCase();
+      const body = actorMatch[2];
+      const paren = /\((agent|role|actor)\)/i.exec(body);
+      const kind: ActorKind =
+        decl === 'agent' || paren?.[1]?.toLowerCase() === 'agent'
+          ? 'agent'
+          : decl === 'role' || paren?.[1]?.toLowerCase() === 'role'
+            ? 'role'
+            : 'actor';
+      const name = body.replace(/\([^)]*\)\s*$/, '').trim();
+      if (name) {
+        actorSeq += 1;
+        const id = `txt-actor-${actorSeq}`;
+        actorByName.set(name.toLowerCase(), id);
+        currentActorId = id;
+        model.actors.push({
+          id,
+          name,
+          kind,
+          x: 100,
+          y: 100,
+          width: 280,
+          height: 240,
+          collapsed: false,
+          customProperties: {},
+        });
+      }
+      continue;
+    }
+
+    const elMatch = /^(goal|quality|softgoal|task|resource)\s*:\s*(.+)$/i.exec(
+      line,
+    );
+    if (elMatch) {
+      const kind = parseElementWord(elMatch[1]);
+      let body = elMatch[2].trim();
+      let actorId = currentActorId;
+      const bracketMatch = /\[([^\]]+)\]\s*$/.exec(body);
+      if (bracketMatch) {
+        const mapped = actorByName.get(bracketMatch[1].trim().toLowerCase());
+        if (mapped) actorId = mapped;
+        body = body.slice(0, bracketMatch.index).trim();
+      }
+      if (body) {
+        elSeq += 1;
+        const id = `txt-el-${elSeq}`;
+        const sz = defaultElementSize(kind);
+        elementByName.set(body.toLowerCase(), id);
+        model.elements.push({
+          id,
+          name: body,
+          kind,
+          actorId,
+          x: 0,
+          y: 0,
+          width: sz.width,
+          height: sz.height,
+          customProperties: {},
+        });
+      }
+      continue;
+    }
+
+    const depMatch = /^dependency\s*:\s*(.+?)\s*->\s*(.+?)\s*:\s*(.+)$/i.exec(
+      line,
+    );
+    if (depMatch) {
+      const srcEp = resolveEndpoint(depMatch[1]);
+      const dstEp = resolveEndpoint(depMatch[2]);
+      let dependumPart = depMatch[3].trim();
+      let dependumKind: ElementKind = 'goal';
+      const kindMatch = /\((goal|quality|softgoal|task|resource)\)\s*$/i.exec(
+        dependumPart,
+      );
+      if (kindMatch) {
+        dependumKind = parseElementWord(kindMatch[1]);
+        dependumPart = dependumPart.slice(0, kindMatch.index).trim();
+      }
+      if (srcEp.actorId && dstEp.actorId) {
+        depSeq += 1;
+        model.dependencies.push({
+          id: `txt-dep-${depSeq}`,
+          dependerActorId: srcEp.actorId,
+          dependerElementId: srcEp.elementId,
+          dependeeActorId: dstEp.actorId,
+          dependeeElementId: dstEp.elementId,
+          dependumName: dependumPart || 'Dependum',
+          dependumKind,
+          x: 0,
+          y: 0,
+          customProperties: {},
+        });
+      }
+      continue;
+    }
+
+    const arrowMidMatch = /^(?:link\s*:\s*)?(.+?)\s*--\s*([^-]+?)\s*-->\s*(.+)$/i.exec(
+      line,
+    );
+    if (arrowMidMatch) {
+      const sourceId = resolveNode(arrowMidMatch[1]);
+      const targetId = resolveNode(arrowMidMatch[3]);
+      if (sourceId && targetId) {
+        linkSeq += 1;
+        model.links.push({
+          id: `txt-link-${linkSeq}`,
+          sourceId,
+          targetId,
+          ...parseLinkWord(arrowMidMatch[2]),
+        });
+      }
+      continue;
+    }
+
+    const arrowSimpleMatch = /^(?:link\s*:\s*)?(.+?)\s*->\s*(.+?)(?:\(([^)]+)\))?\s*$/i.exec(
+      line,
+    );
+    if (arrowSimpleMatch) {
+      const sourceId = resolveNode(arrowSimpleMatch[1]);
+      const targetId = resolveNode(arrowSimpleMatch[2]);
+      if (sourceId && targetId) {
+        linkSeq += 1;
+        model.links.push({
+          id: `txt-link-${linkSeq}`,
+          sourceId,
+          targetId,
+          ...parseLinkWord(arrowSimpleMatch[3] ?? 'andRefinement'),
+        });
+      }
+    }
+  }
+
+  if (model.actors.length === 0 && model.elements.length === 0) {
+    throw new Error(
+      'Unrecognized .txt content: expected piStar JSON or i* 2.0 text declarations (Actor:, Goal:, Task:, ...).',
+    );
+  }
+
+  layoutImportedModel(model);
+  return model;
+}
+
+export function importAnyJsonModel(rawInput: string): DiagramModel {
+  const cleaned = stripDataPrefix(rawInput);
+  if (!cleaned) {
+    throw new Error('Empty file.');
+  }
+
+  if (!cleaned.startsWith('{')) {
+    return importTextualIstarTxt(cleaned);
+  }
+
+  const parsed = JSON.parse(cleaned) as Record<string, unknown>;
   const isNative =
     Array.isArray(parsed.elements) &&
     parsed.orphans === undefined &&
@@ -260,9 +611,14 @@ export function importAnyJsonModel(rawJson: string): DiagramModel {
   }
 
   const doc = parsed as unknown as Partial<PiStarDocument>;
+  const resolvedName =
+    (doc.name && doc.name.trim()) ||
+    (doc.diagram?.name && doc.diagram.name.trim()) ||
+    'Imported piStar Model';
+
   const model: DiagramModel = {
     id: 'imported-pistar',
-    name: doc.name ?? 'Imported piStar Model',
+    name: resolvedName,
     version: doc.istar ?? '2.0',
     actors: [],
     elements: [],
@@ -270,7 +626,7 @@ export function importAnyJsonModel(rawJson: string): DiagramModel {
     dependencies: [],
     metadata: {
       author: '',
-      description: 'Imported from piStar 2.0 JSON',
+      description: 'Imported from piStar 2.0',
       createdAt: '',
       updatedAt: doc.saveDate ?? new Date().toISOString(),
     },
@@ -280,8 +636,8 @@ export function importAnyJsonModel(rawJson: string): DiagramModel {
 
   for (const pa of doc.actors ?? []) {
     const disp = doc.display?.[pa.id];
-    const ax = pa.x ?? 100;
-    const ay = pa.y ?? 100;
+    const ax = pa.x && pa.x !== 0 ? pa.x : (disp?.x ?? pa.x ?? 100);
+    const ay = pa.y && pa.y !== 0 ? pa.y : (disp?.y ?? pa.y ?? 100);
     let minX = ax;
     let minY = ay;
     let maxX = ax + 280;
@@ -290,8 +646,9 @@ export function importAnyJsonModel(rawJson: string): DiagramModel {
     for (const pn of pa.nodes ?? []) {
       const kind = piStarToElementKind(pn.type);
       const sz = defaultElementSize(kind);
-      const ex = pn.x ?? ax + 40;
-      const ey = pn.y ?? ay + 70;
+      const nDisp = doc.display?.[pn.id];
+      const ex = pn.x && pn.x !== 0 ? pn.x : (nDisp?.x ?? pn.x ?? ax + 40);
+      const ey = pn.y && pn.y !== 0 ? pn.y : (nDisp?.y ?? pn.y ?? ay + 70);
       elementToActor.set(pn.id, pa.id);
       minX = Math.min(minX, ex - 24);
       minY = Math.min(minY, ey - 44);
@@ -306,7 +663,7 @@ export function importAnyJsonModel(rawJson: string): DiagramModel {
         y: ey,
         width: sz.width,
         height: sz.height,
-        customProperties: pn.customProperties ?? {},
+        customProperties: normalizeCustomProps(pn.customProperties as Record<string, unknown>),
       });
     }
 
@@ -319,7 +676,7 @@ export function importAnyJsonModel(rawJson: string): DiagramModel {
       width: disp?.width ?? Math.max(280, maxX - minX),
       height: disp?.height ?? Math.max(240, maxY - minY),
       collapsed: disp?.collapsed ?? false,
-      customProperties: pa.customProperties ?? {},
+      customProperties: normalizeCustomProps(pa.customProperties as Record<string, unknown>),
     });
   }
 
@@ -335,11 +692,12 @@ export function importAnyJsonModel(rawJson: string): DiagramModel {
       y: orphan.y ?? 80,
       width: sz.width,
       height: sz.height,
-      customProperties: orphan.customProperties ?? {},
+      customProperties: normalizeCustomProps(orphan.customProperties as Record<string, unknown>),
     });
   }
 
   for (const dep of doc.dependencies ?? []) {
+    const dDisp = doc.display?.[dep.id];
     const srcActor = elementToActor.get(dep.source);
     const dstActor = elementToActor.get(dep.target);
     model.dependencies.push({
@@ -350,15 +708,16 @@ export function importAnyJsonModel(rawJson: string): DiagramModel {
       dependeeElementId: dstActor ? dep.target : null,
       dependumName: dep.text ?? 'Dependum',
       dependumKind: piStarToElementKind(dep.type),
-      x: dep.x ?? 360,
-      y: dep.y ?? 200,
-      customProperties: dep.customProperties ?? {},
+      x: dep.x && dep.x !== 0 ? dep.x : (dDisp?.x ?? dep.x ?? 360),
+      y: dep.y && dep.y !== 0 ? dep.y : (dDisp?.y ?? dep.y ?? 200),
+      customProperties: normalizeCustomProps(dep.customProperties as Record<string, unknown>),
     });
   }
 
   for (const pl of doc.links ?? []) {
     if (pl.type === 'istar.DependencyLink') continue;
-    const lk = piStarToLinkKind(pl.type, pl.label);
+    const rawLink = pl as PiStarLink & { name?: string };
+    const lk = piStarToLinkKind(pl.type, pl.label ?? rawLink.name);
     const link: Link = {
       id: pl.id,
       sourceId: pl.source,

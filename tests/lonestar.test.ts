@@ -17,6 +17,7 @@ import {
   getBuiltinTemplateClient,
   importAnyJsonModel,
 } from '../src/infrastructure/pistarCodec';
+import { compareSemver } from '../src/application/updateStore.svelte';
 
 describe('iStar 2.0 client metamodel rules', () => {
   it('validates canonical travel and telemedicine templates cleanly', () => {
@@ -191,6 +192,62 @@ describe('piStar & LoneStar JSON interop', () => {
     const importedNative = importAnyJsonModel(nativeRaw);
     expect(importedNative.name).toBe(original.name);
     expect(importedNative.actors).toHaveLength(original.actors.length);
+  });
+
+  it('imports piStar .txt (JSON with BOM/diagram/customProperties) and textual .txt models', () => {
+    const pistarTxt = `\uFEFF${JSON.stringify({
+      actors: [
+        {
+          id: 'a1',
+          text: 'Student',
+          type: 'istar.Role',
+          x: 50,
+          y: 70,
+          customProperties: { Semester: 2 },
+          nodes: [
+            {
+              id: 'g1',
+              text: 'Graduate',
+              type: 'istar.Goal',
+              x: 80,
+              y: 120,
+              customProperties: { Mandatory: true },
+            },
+          ],
+        },
+      ],
+      orphans: [],
+      dependencies: [],
+      links: [],
+      display: {},
+      diagram: { name: 'University TXT Export', width: 1200, height: 800 },
+      tool: 'pistar.2.1.0',
+      istar: '2.0',
+    })}`;
+
+    const imported = importAnyJsonModel(pistarTxt);
+    expect(imported.name).toBe('University TXT Export');
+    expect(imported.actors).toHaveLength(1);
+    expect(imported.elements[0].customProperties.Mandatory).toBe('true');
+
+    const textual = `
+Model: Online Exam TXT
+Role: Student
+Goal: Pass Exam
+Task: Submit Answers
+Submit Answers --and--> Pass Exam
+Agent: Proctor
+Task: Verify Identity
+Dependency: Student.Submit Answers -> Proctor.Verify Identity : Exam Auth (resource)
+`;
+    const fromText = importAnyJsonModel(textual);
+    expect(fromText.name).toBe('Online Exam TXT');
+    expect(fromText.actors).toHaveLength(2);
+    expect(fromText.elements).toHaveLength(3);
+    expect(fromText.links).toHaveLength(1);
+    expect(fromText.dependencies).toHaveLength(1);
+    expect(compareSemver('1.2.0', '1.0.0')).toBeGreaterThan(0);
+    expect(compareSemver('v1.0.0', '1.0.0')).toBe(0);
   });
 });
 

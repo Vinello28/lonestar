@@ -31,8 +31,15 @@
 - [x] `cargo test --workspace` passes (6/6 tests)
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` passes with zero warnings
 - [x] `npm test` passes (5/5 Vitest tests)
-- [x] `npm run check && npm run build` succeeds with zero TypeScript or Svelte warnings and bundles cleanly into `docs/demo/`
+- [x] Verify `npm run check && npm run build` succeeds with zero TypeScript or Svelte warnings and bundles cleanly into `docs/demo/`
 - [x] Document engineering review in `tasks/todo.md`
+
+## Phase 6: Cowboy Panda Icon, Enlarged Header, Settings & Updater, piStar `.txt` Support
+- [x] Generate Cowboy Panda app icons (`src-tauri/icons/*`), favicons, and `CowboyPandaIcon.svelte`
+- [x] Enlarge top Toolbar header, brand title/logo, and Template / Open Model controls
+- [x] Implement `.txt` diagram import & export across Rust `lonestar-core` and TypeScript `pistarCodec`
+- [x] Integrate Tauri v2 updater, process & opener plugins (`tauri-plugin-updater`, `latest.json` CI release, startup auto-check)
+- [x] Build `SettingsModal.svelte` (version badge, check updates button, GitHub Page & Releases links) and update `docs/` site
 
 ---
 
@@ -40,18 +47,19 @@
 - **Clean Architecture Adherence**:
   - `crates/lonestar-core/src/domain/` defines pure iStar 2.0 domain entities (`DiagramModel`, `Actor`, `IntentionalElement`, `Link`, `Dependency`) and formal metamodel constraint enforcement (`validator.rs`) without any UI, Tauri, or filesystem dependencies.
   - `crates/lonestar-core/src/application/` encapsulates use cases (`ModelService`) and outbound ports (`ModelRepository`, `PiStarInteropPort`).
-  - `crates/lonestar-core/src/infrastructure/` implements the bidirectional piStar 2.0 JSON adapter, file persistence repository, and built-in canonical templates (`travel`, `telemedicine`).
-  - `src-tauri/` adapts Tauri v2 IPC commands and native save/open dialogs to `lonestar-core`.
+  - `crates/lonestar-core/src/infrastructure/` implements the bidirectional piStar 2.0 JSON/TXT adapter, file persistence repository, and built-in canonical templates (`travel`, `telemedicine`).
+  - `src-tauri/` adapts Tauri v2 IPC commands, native save/open dialogs, auto-updater (`tauri-plugin-updater`), process relaunch (`tauri-plugin-process`), and URL opener (`tauri-plugin-opener`) to `lonestar-core`.
   - `src/` mirrors Clean Architecture in TypeScript + Svelte 5 Runes (`$state`, `$derived`) with seamless Tauri-desktop / browser-demo fallback via `backendAdapter.ts`.
 - **iStar 2.0 Fidelity & Usability**:
   - Supports all actor variants (`Actor`, `Agent`, `Role` with official bar/crescent markers and expandable/collapsible SR boundaries), all intentional elements (`Goal`, `Quality`, `Task`, `Resource`), all internal links (`AndRefinement` T-bar, `OrRefinement` triangle, `NeededBy` circle, `Contribution` `make`/`help`/`hurt`/`break`, `Qualification` dashed), actor links (`IsA`, `ParticipatesIn`), and `Dependency` (`D` semicircle markers).
   - Pointer-based drag-and-drop from the Palette works uniformly across Linux WebKitGTK, macOS, Windows, and web browsers, with automatic boundary containment and Smart Auto-Connect drag linking.
+  - Supports opening, dropping, and exporting `.json` and `.txt` (piStar 2.0 JSON-in-`.txt` and structured iStar 2.0 text notation).
 - **Theme Constraint Verification**:
   - Both `src/app.css` and `docs/styles.css` enforce `R >= G >= B` across all light (`#f6f4ef`, `#fcfbf8`, `#efece4`) and dark (`#151412`, `#1d1c19`, `#262420`) background tokens, automatically verified by Vitest.
 - **Verification Results**:
-  - `cargo fmt --all` — clean.
+  - `cargo fmt --all -- --check` — clean.
   - `cargo clippy --workspace --all-targets -- -D warnings` — 0 warnings, 0 errors.
-  - `cargo test --workspace` — 6 passed, 0 failed.
+  - `cargo test --workspace` — 7 passed, 0 failed.
   - `npm run check` (`tsc --noEmit`) — 0 errors.
-  - `npm test` (Vitest) — 5 passed, 0 failed.
+  - `npm test` (Vitest) — 6 passed, 0 failed.
   - `npm run build` (Vite + Svelte 5) — 0 errors, 0 warnings; deployed web studio bundle into `docs/demo/`.

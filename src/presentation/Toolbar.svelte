@@ -1,6 +1,7 @@
 <script lang="ts">
   import { modelStore } from '../application/modelStore.svelte';
   import { uiStore } from '../application/uiStore.svelte';
+  import { updateStore } from '../application/updateStore.svelte';
   import { backendAdapter, isTauriRuntime } from '../infrastructure/backendAdapter';
   import {
     buildVectorSvg,
@@ -8,6 +9,7 @@
     sanitizeFilename,
   } from '../infrastructure/exportService';
   import { exportModelToLoneStarJson } from '../infrastructure/pistarCodec';
+  import CowboyPandaIcon from './shapes/CowboyPandaIcon.svelte';
 
   interface Props {
     svgRef: SVGSVGElement | null;
@@ -57,7 +59,7 @@
       setTimeout(onFitToScreen, 20);
       uiStore.notify(`Loaded "${loaded.name}"`, 'success');
     } catch (err) {
-      uiStore.notify(`Invalid JSON: ${String(err)}`, 'error');
+      uiStore.notify(`Invalid model file: ${String(err)}`, 'error');
     } finally {
       input.value = '';
     }
@@ -139,6 +141,20 @@
     if (saved) uiStore.notify('Exported piStar 2.0 JSON', 'success');
   }
 
+  async function handleExportPiStarTxt() {
+    const txt = await backendAdapter.exportPiStarJson(modelStore.model);
+    const filename = `${sanitizeFilename(modelStore.model.name)}.pistar.txt`;
+    const saved = await backendAdapter.saveFile(
+      filename,
+      'piStar 2.0 Text (.txt)',
+      ['txt'],
+      txt,
+      false,
+    );
+    uiStore.exportMenuOpen = false;
+    if (saved) uiStore.notify('Exported piStar 2.0 (.txt)', 'success');
+  }
+
   async function handleAutoLayout() {
     await modelStore.applyAutoLayout();
     setTimeout(onFitToScreen, 20);
@@ -147,69 +163,51 @@
 </script>
 
 <header class="toolbar">
-  <div class="brand">
-    <svg viewBox="0 0 32 32" class="brand-logo" aria-hidden="true">
-      <rect
-        x="2"
-        y="2"
-        width="28"
-        height="28"
-        rx="8"
-        fill="var(--bg-elevated)"
-        stroke="var(--accent-primary)"
-        stroke-width="2"
-      />
-      <circle
-        cx="16"
-        cy="16"
-        r="9.5"
-        fill="none"
-        stroke="var(--accent-primary)"
-        stroke-width="1.8"
-      />
-      <polygon
-        points="16,9 18,14 23,14 19,17 20.5,22 16,19 11.5,22 13,17 9,14 14,14"
-        fill="var(--accent-primary)"
-      />
-    </svg>
-    <div class="brand-meta">
-      <span class="brand-title">LoneStar</span>
+  <div class="hero-left">
+    <div class="brand">
+      <CowboyPandaIcon size={48} className="brand-logo" />
+      <div class="brand-meta">
+        <div class="brand-top-row">
+          <span class="brand-title">LoneStar</span>
+          <span class="brand-ver">v{updateStore.appVersion}</span>
+        </div>
+        <input
+          class="doc-title-input"
+          type="text"
+          bind:value={modelStore.model.name}
+          aria-label="Diagram Name"
+        />
+      </div>
+    </div>
+
+    <div class="file-controls">
+      <select
+        class="tb-select hero-control"
+        aria-label="Load Template"
+        onchange={handleTemplateChange}
+      >
+        <option value="">Choose Template…</option>
+        <option value="travel">Travel Reimbursement (i* 2.0)</option>
+        <option value="telemedicine">Telemedicine System (i* 2.0)</option>
+        <option value="empty">Blank Canvas</option>
+      </select>
+
+      <button
+        type="button"
+        class="tb-btn hero-control open-btn"
+        onclick={handleOpenJson}
+        title="Load LoneStar / piStar model (.json or .txt)"
+      >
+        Open .json / .txt
+      </button>
       <input
-        class="doc-title-input"
-        type="text"
-        bind:value={modelStore.model.name}
-        aria-label="Diagram Name"
+        bind:this={fileInputRef}
+        type="file"
+        accept=".json,.txt,.istar,application/json,text/plain"
+        style="display: none;"
+        onchange={handleBrowserFileChange}
       />
     </div>
-  </div>
-
-  <div class="toolbar-group">
-    <select
-      class="tb-select"
-      aria-label="Load Template"
-      onchange={handleTemplateChange}
-    >
-      <option value="">Templates…</option>
-      <option value="travel">Travel Reimbursement (i* 2.0)</option>
-      <option value="telemedicine">Telemedicine System (i* 2.0)</option>
-      <option value="empty">Blank Canvas</option>
-    </select>
-
-    <button
-      type="button"
-      class="tb-btn"
-      onclick={handleOpenJson}
-      title="Load JSON (LoneStar or piStar 2.0)"
-    >
-      Open JSON
-    </button>
-    <input
-      bind:this={fileInputRef}
-      type="file"
-      accept=".json,application/json"
-      style="display: none;"
-      onchange={handleBrowserFileChange}
-    />
   </div>
 
   <div class="toolbar-group">
@@ -299,7 +297,7 @@
           </button>
 
           <div class="dropdown-divider"></div>
-          <div class="dropdown-section">JSON Document</div>
+          <div class="dropdown-section">Model Document</div>
           <button
             type="button"
             class="menu-action"
@@ -312,7 +310,14 @@
             class="menu-action"
             onclick={handleExportPiStarJson}
           >
-            Export piStar 2.0 JSON
+            Export piStar 2.0 JSON (.json)
+          </button>
+          <button
+            type="button"
+            class="menu-action"
+            onclick={handleExportPiStarTxt}
+          >
+            Export piStar 2.0 Text (.txt)
           </button>
         </div>
       {/if}
@@ -327,58 +332,95 @@
     >
       {uiStore.theme === 'light' ? '☾ Dark' : '☀ Light'}
     </button>
+
+    <button
+      type="button"
+      class="tb-btn settings-btn"
+      onclick={() => (uiStore.settingsModalOpen = true)}
+      title="Version, Updates & Project Links"
+      aria-label="Open Settings"
+    >
+      <span>⚙ Settings</span>
+      {#if updateStore.status === 'available' || updateStore.status === 'installed'}
+        <span class="update-dot" aria-label="Update available"></span>
+      {/if}
+    </button>
   </div>
 </header>
 
 <style>
   .toolbar {
-    height: 54px;
+    min-height: 74px;
     flex-shrink: 0;
     background: var(--bg-surface);
     border-bottom: 1px solid var(--border-subtle);
-    padding: 0 14px;
+    padding: 8px 18px;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+
+  .hero-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
   }
 
   .brand {
     display: flex;
     align-items: center;
-    gap: 10px;
-    min-width: 240px;
+    gap: 12px;
+    min-width: 280px;
   }
 
-  .brand-logo {
-    width: 30px;
-    height: 30px;
+  :global(.brand-logo) {
     flex-shrink: 0;
+    filter: drop-shadow(0 2px 4px rgba(30, 24, 16, 0.14));
   }
 
   .brand-meta {
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: 2px;
+  }
+
+  .brand-top-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
   }
 
   .brand-title {
-    font-size: 11px;
-    font-weight: 700;
+    font-size: 13.5px;
+    font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--accent-primary);
   }
 
+  .brand-ver {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+  }
+
   .doc-title-input {
     border: 1px solid transparent;
     background: transparent;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 1px 4px;
-    margin-left: -4px;
-    border-radius: 5px;
-    width: 230px;
+    font-size: 16px;
+    font-weight: 700;
+    height: 32px;
+    padding: 2px 6px;
+    margin-left: -6px;
+    border-radius: 7px;
+    width: 265px;
     outline: none;
   }
 
@@ -386,6 +428,40 @@
   .doc-title-input:focus {
     background: var(--bg-elevated);
     border-color: var(--border-strong);
+  }
+
+  .file-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-left: 14px;
+    border-left: 1px solid var(--border-subtle);
+  }
+
+  .hero-control {
+    height: 42px !important;
+    padding: 0 14px !important;
+    font-size: 13.5px !important;
+    border-radius: 10px !important;
+    border-color: var(--border-strong) !important;
+  }
+
+  .tb-select.hero-control {
+    min-width: 235px;
+  }
+
+  .settings-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    position: relative;
+  }
+
+  .update-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--status-success);
   }
 
   .toolbar-group {

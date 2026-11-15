@@ -27,6 +27,7 @@ class UiStore {
   paletteDrag = $state<PaletteDragPayload | null>(null);
   validationDrawerOpen = $state<boolean>(false);
   exportMenuOpen = $state<boolean>(false);
+  settingsModalOpen = $state<boolean>(false);
   pngScale = $state<2 | 3 | 4>(3);
   transparentExport = $state<boolean>(false);
   toast = $state<{ text: string; tone: 'info' | 'success' | 'error' } | null>(

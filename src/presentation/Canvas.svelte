@@ -544,8 +544,16 @@
     fileDragOver = false;
     const file = e.dataTransfer?.files?.[0];
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.json')) {
-      uiStore.notify('Drop a .json file (LoneStar or piStar 2.0 format).', 'error');
+    const lowerName = file.name.toLowerCase();
+    if (
+      !lowerName.endsWith('.json') &&
+      !lowerName.endsWith('.txt') &&
+      !lowerName.endsWith('.istar')
+    ) {
+      uiStore.notify(
+        'Drop a .json or .txt file (LoneStar or piStar 2.0 format).',
+        'error',
+      );
       return;
     }
     try {
@@ -909,7 +917,7 @@
 
   {#if fileDragOver}
     <div class="file-drop-overlay">
-      <div>Drop JSON file to load into LoneStar</div>
+      <div>Drop .json or .txt file to load into LoneStar</div>
     </div>
   {/if}
 </div>

@@ -2,12 +2,14 @@
   import { onMount } from 'svelte';
   import { modelStore } from './application/modelStore.svelte';
   import { uiStore } from './application/uiStore.svelte';
+  import { updateStore } from './application/updateStore.svelte';
   import { findActorAtPoint } from './domain/istarRules';
   import type { ActorKind, ElementKind } from './domain/types';
   import Canvas, { type ActivePaletteGhost } from './presentation/Canvas.svelte';
   import DependencyModal from './presentation/DependencyModal.svelte';
   import Inspector from './presentation/Inspector.svelte';
   import Palette from './presentation/Palette.svelte';
+  import SettingsModal from './presentation/SettingsModal.svelte';
   import Toolbar from './presentation/Toolbar.svelte';
 
   let svgRef: SVGSVGElement | null = $state(null);
@@ -28,6 +30,7 @@
     uiStore.initTheme();
     await modelStore.initFromBackend();
     setTimeout(() => canvasRef?.fitToScreen(), 30);
+    void updateStore.initOnStartup();
   });
 
   function handleStartPaletteDrag(
@@ -170,6 +173,8 @@
   </main>
 
   <DependencyModal />
+
+  <SettingsModal />
 
   {#if paletteGhost}
     <div

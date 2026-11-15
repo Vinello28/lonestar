@@ -27,6 +27,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["deb", "appimage", "dmg", "msi", "nsis"],
     "icon": [
       "icons/32x32.png",
@@ -38,5 +39,16 @@
     "category": "DeveloperTool",
     "shortDescription": "Cross-platform iStar 2.0 (i*) goal-oriented modeling studio",
     "longDescription": "LoneStar is a fast, native cross-platform modeling application for iStar 2.0 (i*) built with Rust and Svelte 5 following Clean Architecture."
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdBRjExMkU5MTYyRDEyRDYKUldUV0VpMFc2Ukx4ZWxhNUk3SEFaZE5xVSsxOWZsMUdVOXdVMndSVFRRWWp6ZG1rUGpFcmRuQ3UK",
+      "endpoints": [
+        "https://github.com/Vinello28/lonestar/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -251,3 +251,45 @@ fn native_lonestar_json_roundtrip_and_auto_layout() {
         }
     }
 }
+
+#[test]
+fn pistar_txt_json_and_textual_istar_import() {
+    // 1. piStar .txt file (JSON with UTF-8 BOM, `diagram` metadata, and numeric customProperties)
+    let pistar_txt = "\u{feff}{\n  \"actors\": [{\n    \"id\": \"a1\",\n    \"text\": \"Customer\",\n    \"type\": \"istar.Role\",\n    \"x\": 60,\n    \"y\": 80,\n    \"customProperties\": { \"Priority\": 1, \"Critical\": true },\n    \"nodes\": [{\n      \"id\": \"g1\",\n      \"text\": \"Order Coffee\",\n      \"type\": \"istar.Goal\",\n      \"x\": 90,\n      \"y\": 130,\n      \"customProperties\": { \"SLA\": 30 }\n    }]\n  }],\n  \"orphans\": [],\n  \"dependencies\": [],\n  \"links\": [],\n  \"display\": {},\n  \"diagram\": { \"name\": \"Coffee Shop piStar TXT\", \"width\": 1200, \"height\": 900 },\n  \"tool\": \"pistar.2.1.0\",\n  \"istar\": \"2.0\"\n}";
+
+    let imported_pistar = PiStarJsonAdapter::import_any_json(pistar_txt)
+        .expect("piStar .txt JSON with diagram meta & non-string customProperties should import");
+    assert_eq!(imported_pistar.name, "Coffee Shop piStar TXT");
+    assert_eq!(imported_pistar.actors.len(), 1);
+    assert_eq!(imported_pistar.elements[0].custom_properties["SLA"], "30");
+
+    // 2. Structured textual i* 2.0 .txt notation
+    let textual = "
+# Comment header
+Name: Library Loan Text Model
+Role: Student
+Goal: Borrow Book
+Task: Request Loan
+Resource: Student ID
+Request Loan --and--> Borrow Book
+Student ID --neededBy--> Request Loan
+Agent: Librarian
+Task: Issue Book
+Dependency: Student.Borrow Book -> Librarian.Issue Book : Book Loan (resource)
+";
+    let imported_txt = PiStarJsonAdapter::import_any_json(textual)
+        .expect("textual i* .txt notation should import cleanly");
+    assert_eq!(imported_txt.name, "Library Loan Text Model");
+    assert_eq!(imported_txt.actors.len(), 2);
+    assert_eq!(imported_txt.elements.len(), 4);
+    assert_eq!(imported_txt.links.len(), 2);
+    assert_eq!(imported_txt.dependencies.len(), 1);
+    let errors: Vec<_> = ModelService::validate(&imported_txt)
+        .into_iter()
+        .filter(|i| i.severity == ValidationSeverity::Error)
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "Unexpected validation errors: {errors:?}"
+    );
+}

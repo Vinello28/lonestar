@@ -68,7 +68,7 @@
       const owner = host.replace('.github.io', '');
       return `${owner}/${parts[0]}`;
     }
-    return 'lonestar-istar/lonestar';
+    return 'Vinello28/lonestar';
   }
 
   const repoSlug = inferGitHubRepo();
