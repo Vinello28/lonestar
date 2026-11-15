@@ -6,6 +6,8 @@ import {
   importAnyJsonModel,
 } from './pistarCodec';
 
+declare const __APP_VERSION__: string;
+
 export function isTauriRuntime(): boolean {
   return (
     typeof window !== 'undefined' &&
@@ -74,7 +76,7 @@ export const backendAdapter = {
         ? 'macos'
         : 'linux';
     return {
-      version: '1.0.0',
+      version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.0',
       platform,
       arch: 'web',
     };

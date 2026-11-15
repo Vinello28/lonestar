@@ -59,6 +59,7 @@
   <g class="dependency-group">
     <!-- Invisible wider hit targets for easy selection -->
     <line
+      class="editor-only"
       role="presentation"
       x1={segments.s1Start.x}
       y1={segments.s1Start.y}
@@ -73,6 +74,7 @@
       style="cursor: pointer;"
     />
     <line
+      class="editor-only"
       role="presentation"
       x1={segments.s2Start.x}
       y1={segments.s2Start.y}

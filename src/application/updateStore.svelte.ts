@@ -187,6 +187,9 @@ class UpdateStore {
     };
 
     const tag = (release.tag_name ?? '').replace(/^v/i, '').trim();
+    if (tag && !isTauriRuntime()) {
+      this.appVersion = tag;
+    }
     if (!tag || compareSemver(tag, this.appVersion) <= 0) {
       this.status = 'up-to-date';
       this.latestVersion = tag || this.appVersion;

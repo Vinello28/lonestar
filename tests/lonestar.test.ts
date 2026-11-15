@@ -9,6 +9,7 @@ import {
 import type { DiagramModel } from '../src/domain/types';
 import {
   computeDiagramBounds,
+  resolveStandaloneSvgAttributeValues,
   sanitizeFilename,
 } from '../src/infrastructure/exportService';
 import {
@@ -266,6 +267,48 @@ describe('Export bounds & filename helpers', () => {
     expect(sanitizeFilename('University Travel (i* 2.0)!')).toBe(
       'university-travel-i-2-0',
     );
+  });
+
+  it('resolves CSS var() and rgba() colors to standalone SVG 1.1 attributes', () => {
+    const rawSvg = `<svg xmlns="http://www.w3.org/2000/svg"><defs><marker id="m" orient="auto-start-reverse"><path fill="var(--link-stroke)"/></marker></defs><rect fill="var(--bg-actor-boundary)" stroke="var(--border-actor)"/><rect fill="var(--goal-fill)" stroke="var(--goal-stroke)"/><!----><text fill="var(--text-primary)">Book Trip</text></svg>`;
+
+    const lightSvg = resolveStandaloneSvgAttributeValues(rawSvg, 'light');
+    expect(lightSvg).not.toContain('var(--');
+    expect(lightSvg).not.toContain('rgba(');
+    expect(lightSvg).not.toContain('<!---->');
+    expect(lightSvg).toContain('orient="auto"');
+    expect(lightSvg).toContain('fill="#ebe7de" fill-opacity="0.6"');
+    expect(lightSvg).toContain('fill="#fbe2c4"');
+    expect(lightSvg).toContain('stroke="#9c5618"');
+    expect(lightSvg).toContain('fill="#1f1d1a"');
+
+    const darkSvg = resolveStandaloneSvgAttributeValues(rawSvg, 'dark');
+    expect(darkSvg).not.toContain('var(--');
+    expect(darkSvg).toContain('fill="#292722" fill-opacity="0.6"');
+    expect(darkSvg).toContain('fill="#f3efe7"');
+  });
+});
+
+describe('UI version placement & GitHub Pages AI documentation', () => {
+  it('moves version badge out of top Toolbar into SettingsModal and documents AI Agent on GH Pages', () => {
+    const toolbar = readFileSync(
+      resolve(process.cwd(), 'src/presentation/Toolbar.svelte'),
+      'utf8',
+    );
+    const settings = readFileSync(
+      resolve(process.cwd(), 'src/presentation/SettingsModal.svelte'),
+      'utf8',
+    );
+    const docsHtml = readFileSync(
+      resolve(process.cwd(), 'docs/index.html'),
+      'utf8',
+    );
+
+    expect(toolbar).not.toContain('brand-ver');
+    expect(settings).toContain('Version v{updateStore.appVersion}');
+    expect(docsHtml).toContain('id="ai-agent"');
+    expect(docsHtml).toContain('LM Studio');
+    expect(docsHtml).toContain('google/gemma-4-e4b');
   });
 });
 

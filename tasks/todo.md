@@ -49,6 +49,13 @@
 - [x] Add Rust & Vitest unit/integration tests covering batch operations, metamodel auto-repair, fenced block extraction, and agentStore preset defaults
 - [x] Run full verification suite (`cargo fmt`, `cargo clippy`, `cargo test`, `npm run check`, `npm test`, `npm run build`) and document final review
 
+## Phase 8: Version Sync, Toolbar Cleanup, SVG Export Fix & Docs AI Section
+- [x] Remove version badge from top Toolbar (`src/presentation/Toolbar.svelte`), keeping it exclusively in `SettingsModal.svelte`
+- [x] Inject `package.json` version via Vite `define` (`__APP_VERSION__`), sync Web Studio `appVersion` from GitHub Releases API in `updateStore.svelte.ts`, and auto-sync `v*` Git tag into `package.json`, `tauri.conf.json`, and `Cargo.toml` inside `.github/workflows/release.yml`
+- [x] Fix standalone Vector SVG export (`src/infrastructure/exportService.ts`, `LinkEdge.svelte`, `DependencyNode.svelte`) by stripping editor hit-targets/comments and resolving `var(--...)` + `rgba(...)` paints to SVG 1.1 hex + opacity attributes
+- [x] Document Desktop-only Local & Cloud AI Agent in `docs/index.html`
+- [x] Add Vitest unit tests and verify `npm run check`, `npm test`, `npm run build`, `cargo test --workspace`, and Inkscape SVG rendering
+
 ---
 
 ## Final Engineering Review

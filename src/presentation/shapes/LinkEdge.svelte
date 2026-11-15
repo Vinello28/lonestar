@@ -91,6 +91,7 @@
   <g class="link-group">
     <!-- Wide invisible hit target for easy clicking -->
     <line
+      class="editor-only"
       role="presentation"
       x1={geometry.p1.x}
       y1={geometry.p1.y}

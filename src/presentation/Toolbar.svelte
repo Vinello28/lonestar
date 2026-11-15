@@ -202,7 +202,6 @@
       <div class="brand-meta">
         <div class="brand-top-row">
           <span class="brand-title">LoneStar</span>
-          <span class="brand-ver">v{updateStore.appVersion}</span>
         </div>
         <input
           class="doc-title-input"
@@ -469,16 +468,6 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--accent-primary);
-  }
-
-  .brand-ver {
-    font-size: 10.5px;
-    font-weight: 700;
-    padding: 1px 7px;
-    border-radius: 999px;
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-subtle);
-    color: var(--text-secondary);
   }
 
   .doc-title-input {

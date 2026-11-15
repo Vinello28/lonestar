@@ -55,6 +55,33 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Sync version from Git tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          node -e '
+            const fs = require("fs");
+            const version = process.env.GITHUB_REF_NAME.replace(/^v/i, "");
+            if (!version) process.exit(0);
+            for (const file of ["package.json", "src-tauri/tauri.conf.json"]) {
+              const json = JSON.parse(fs.readFileSync(file, "utf8"));
+              json.version = version;
+              fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
+            }
+            const cargo = fs.readFileSync("Cargo.toml", "utf8").replace(
+              /^(\[workspace\.package\][\s\S]*?^\s*version\s*=\s*")[^"]*(")/m,
+              `$1${version}$2`
+            );
+            fs.writeFileSync("Cargo.toml", cargo);
+            const tauriCargo = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+            if (/^version\s*=\s*"/m.test(tauriCargo)) {
+              fs.writeFileSync(
+                "src-tauri/Cargo.toml",
+                tauriCargo.replace(/^(version\s*=\s*")[^"]*(")/m, `$1${version}$2`)
+              );
+            }
+            console.log(`Synced project version to ${version}`);
+          '
+
       - name: Build and publish Tauri release artifacts
         uses: tauri-apps/tauri-action@v0
         env:

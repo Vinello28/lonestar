@@ -18,6 +18,7 @@
         <nav class="nav-links" aria-label="Primary Navigation">
           <a href="#downloads">Downloads</a>
           <a href="#features">Features</a>
+          <a href="#ai-agent">AI Agent</a>
           <a href="#istar2">iStar 2.0 Notation</a>
           <a href="#architecture">Clean Architecture</a>
           <a href="./demo/index.html">Web Studio</a>
@@ -282,6 +283,39 @@
               <h3>Warm Light &amp; Dark</h3>
               <p>
                 Tactile architectural alabaster light mode and warm obsidian dark mode — carefully tuned with zero bluish background glare.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="ai-agent" class="section">
+        <div class="container">
+          <div class="section-header">
+            <span class="eyebrow">Native Desktop Exclusive</span>
+            <h2>Built-in Local &amp; Cloud AI Modeling Agent</h2>
+            <p>
+              Generate, refine, and validate complete iStar 2.0 diagrams using natural language — running privately on your own hardware via Tauri Desktop or via OpenAI-compatible cloud APIs.
+            </p>
+          </div>
+
+          <div class="cards-3">
+            <article class="card">
+              <h3>Local-First Models</h3>
+              <p>
+                Pre-configured for <strong>LM Studio</strong> (<code>http://localhost:1234/v1</code> with <code>google/gemma-4-e4b</code>) and <strong>Ollama</strong> (<code>http://localhost:11434/v1</code>), plus instant support for <strong>OpenAI</strong>, <strong>OpenRouter</strong>, and custom OpenAI-compatible endpoints.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Rust Validation &amp; Self-Correction</h3>
+              <p>
+                Declarative operations (<code>add_actor</code>, <code>add_node</code>, <code>add_link</code>, <code>auto_layout</code>) are executed in Rust (<code>lonestar-core</code>) with automatic iStar 2.0 metamodel repair and up to two self-correction rounds.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Desktop Privacy &amp; 1-Click Undo</h3>
+              <p>
+                Strictly exclusive to the native Desktop app: Rust IPC bypasses browser CORS restrictions with full local privacy, selection-aware prompts, and single-step Undo/Redo history integration.
               </p>
             </article>
           </div>

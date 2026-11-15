@@ -7,7 +7,79 @@ export interface DiagramBounds {
   height: number;
 }
 
-export function computeDiagramBounds(model: DiagramModel, padding = 56): DiagramBounds {
+export type ExportTheme = 'light' | 'dark';
+
+const EXPORT_FONT_FAMILY =
+  'Inter, Segoe UI, system-ui, -apple-system, sans-serif';
+
+const LIGHT_EXPORT_VARS: Record<string, string> = {
+  '--bg-canvas': '#f6f4ef',
+  '--bg-surface': '#fcfbf8',
+  '--bg-actor-boundary': 'rgba(235, 231, 222, 0.6)',
+  '--border-subtle': '#dad5c9',
+  '--border-strong': '#bab3a4',
+  '--border-actor': '#7d776b',
+  '--text-primary': '#1f1d1a',
+  '--text-secondary': '#666156',
+  '--accent-primary': '#b86114',
+  '--status-success': '#2f6f3e',
+  '--status-warning': '#a66914',
+  '--status-error': '#a82e24',
+  '--actor-fill': '#e3ebd9',
+  '--actor-stroke': '#4a5d3e',
+  '--goal-fill': '#fbe2c4',
+  '--goal-stroke': '#9c5618',
+  '--quality-fill': '#ece8d5',
+  '--quality-stroke': '#6b6332',
+  '--task-fill': '#f7eab8',
+  '--task-stroke': '#8a6814',
+  '--resource-fill': '#efeae2',
+  '--resource-stroke': '#625b50',
+  '--link-stroke': '#3d3932',
+  '--link-label-bg': '#fcfbf8',
+};
+
+const DARK_EXPORT_VARS: Record<string, string> = {
+  '--bg-canvas': '#151412',
+  '--bg-surface': '#1d1c19',
+  '--bg-actor-boundary': 'rgba(41, 39, 34, 0.6)',
+  '--border-subtle': '#33302a',
+  '--border-strong': '#4a453d',
+  '--border-actor': '#8a8376',
+  '--text-primary': '#f3efe7',
+  '--text-secondary': '#aba498',
+  '--accent-primary': '#e4943e',
+  '--status-success': '#6db87c',
+  '--status-warning': '#e0a348',
+  '--status-error': '#e0685c',
+  '--actor-fill': '#2c3227',
+  '--actor-stroke': '#9ab886',
+  '--goal-fill': '#3e2c1e',
+  '--goal-stroke': '#e8a35d',
+  '--quality-fill': '#353223',
+  '--quality-stroke': '#d4c87c',
+  '--task-fill': '#3a321e',
+  '--task-stroke': '#e6bf5a',
+  '--resource-fill': '#2e2b26',
+  '--resource-stroke': '#b5aca0',
+  '--link-stroke': '#d6cfc3',
+  '--link-label-bg': '#1d1c19',
+};
+
+const EDITOR_INTERACTIVE_ATTRS = [
+  'style',
+  'class',
+  'role',
+  'tabindex',
+  'aria-label',
+  'data-node-id',
+  'pointer-events',
+];
+
+export function computeDiagramBounds(
+  model: DiagramModel,
+  padding = 56,
+): DiagramBounds {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -48,27 +120,149 @@ export function computeDiagramBounds(model: DiagramModel, padding = 56): Diagram
   };
 }
 
-const EXPORT_CSS_VARS = [
-  '--bg-canvas',
-  '--bg-surface',
-  '--bg-actor-boundary',
-  '--border-actor',
-  '--text-primary',
-  '--text-secondary',
-  '--actor-fill',
-  '--actor-stroke',
-  '--goal-fill',
-  '--goal-stroke',
-  '--quality-fill',
-  '--quality-stroke',
-  '--task-fill',
-  '--task-stroke',
-  '--resource-fill',
-  '--resource-stroke',
-  '--link-stroke',
-  '--link-label-bg',
-  '--accent-primary',
-];
+export function resolveExportPalette(
+  theme: ExportTheme,
+  computed?: Pick<CSSStyleDeclaration, 'getPropertyValue'> | null,
+): Record<string, string> {
+  const base = theme === 'dark' ? DARK_EXPORT_VARS : LIGHT_EXPORT_VARS;
+  const resolved: Record<string, string> = { ...base };
+  if (computed) {
+    for (const key of Object.keys(base)) {
+      const value = computed.getPropertyValue(key).trim();
+      if (value) resolved[key] = value;
+    }
+  }
+  return resolved;
+}
+
+export function rgbaToHexAndOpacity(
+  value: string,
+): { hex: string; opacity?: string } | null {
+  const match =
+    /^rgba?\(\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})\s*[,\s]\s*(\d{1,3})(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/i.exec(
+      value.trim(),
+    );
+  if (!match) return null;
+  const toHex = (n: string) =>
+    Math.max(0, Math.min(255, parseInt(n, 10)))
+      .toString(16)
+      .padStart(2, '0');
+  const hex = `#${toHex(match[1])}${toHex(match[2])}${toHex(match[3])}`;
+  const rawAlpha = match[4];
+  if (rawAlpha === undefined) return { hex };
+  const numericAlpha = rawAlpha.endsWith('%')
+    ? parseFloat(rawAlpha) / 100
+    : parseFloat(rawAlpha);
+  if (Number.isFinite(numericAlpha) && numericAlpha < 1) {
+    return { hex, opacity: String(Number(numericAlpha.toFixed(3))) };
+  }
+  return { hex };
+}
+
+export function resolveSvgCssValue(
+  value: string,
+  palette: Record<string, string>,
+): string {
+  return value.replace(
+    /var\(\s*(--[a-zA-Z0-9-_]+)(?:\s*,\s*([^)]+))?\s*\)/g,
+    (full, name: string, fallback?: string) =>
+      palette[name] ?? fallback?.trim() ?? full,
+  );
+}
+
+/**
+ * Resolves a concrete SVG paint attribute (`fill` / `stroke`), splitting any
+ * CSS `var(--...)` or `rgba(...)` color into an SVG 1.1 hex color + opacity.
+ */
+function normalizePaintValue(
+  rawValue: string,
+  palette: Record<string, string>,
+): { color: string; opacity?: string } {
+  const resolved = resolveSvgCssValue(rawValue, palette).trim();
+  const converted = rgbaToHexAndOpacity(resolved);
+  if (converted) {
+    return { color: converted.hex, opacity: converted.opacity };
+  }
+  return { color: resolved };
+}
+
+/**
+ * Sanitizes standalone SVG markup by resolving all `var(--...)` tokens and
+ * `rgba(...)` paints into SVG 1.1 attributes, normalizing `auto-start-reverse`
+ * markers, and stripping XML comments.
+ */
+export function resolveStandaloneSvgAttributeValues(
+  svgMarkup: string,
+  theme: ExportTheme = 'light',
+): string {
+  const palette = resolveExportPalette(theme);
+  let out = svgMarkup.replace(/<!--[\s\S]*?-->/g, '');
+  out = out.replace(/orient="auto-start-reverse"/g, 'orient="auto"');
+  out = out.replace(
+    /\b(fill|stroke)="([^"]*)"/g,
+    (_full, attr: string, val: string) => {
+      const { color, opacity } = normalizePaintValue(val, palette);
+      if (opacity !== undefined) {
+        return `${attr}="${color}" ${attr}-opacity="${opacity}"`;
+      }
+      return `${attr}="${color}"`;
+    },
+  );
+  out = out.replace(
+    /var\(\s*(--[a-zA-Z0-9-_]+)(?:\s*,\s*([^)]+))?\s*\)/g,
+    (full, name: string, fallback?: string) =>
+      palette[name] ?? fallback?.trim() ?? full,
+  );
+  return out;
+}
+
+function stripXmlComments(root: Node): void {
+  const comments: Comment[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+  let current = walker.nextNode();
+  while (current) {
+    comments.push(current as Comment);
+    current = walker.nextNode();
+  }
+  for (const comment of comments) {
+    comment.parentNode?.removeChild(comment);
+  }
+}
+
+function resolveSvgDomAttributes(
+  svgRoot: SVGSVGElement,
+  palette: Record<string, string>,
+): void {
+  const allElements = [svgRoot, ...Array.from(svgRoot.querySelectorAll('*'))];
+  for (const el of allElements) {
+    for (const attrName of EDITOR_INTERACTIVE_ATTRS) {
+      el.removeAttribute(attrName);
+    }
+
+    if (
+      el.tagName.toLowerCase() === 'marker' &&
+      el.getAttribute('orient') === 'auto-start-reverse'
+    ) {
+      el.setAttribute('orient', 'auto');
+    }
+
+    for (const attr of Array.from(el.attributes)) {
+      if (attr.name === 'fill' || attr.name === 'stroke') {
+        const { color, opacity } = normalizePaintValue(attr.value, palette);
+        el.setAttribute(attr.name, color);
+        if (opacity !== undefined && !el.hasAttribute(`${attr.name}-opacity`)) {
+          el.setAttribute(`${attr.name}-opacity`, opacity);
+        }
+      } else if (attr.value.includes('var(')) {
+        el.setAttribute(attr.name, resolveSvgCssValue(attr.value, palette));
+      }
+    }
+
+    if (el.tagName.toLowerCase() === 'text') {
+      el.setAttribute('font-family', EXPORT_FONT_FAMILY);
+    }
+  }
+}
 
 function buildStandaloneSvgString(
   svgElement: SVGSVGElement,
@@ -79,30 +273,27 @@ function buildStandaloneSvgString(
   const bounds = computeDiagramBounds(model);
   const clone = svgElement.cloneNode(true) as SVGSVGElement;
 
-  clone.querySelectorAll('.editor-only').forEach((node) => node.remove());
+  clone
+    .querySelectorAll('.editor-only, #lonestar-dot-grid, line[stroke="transparent"]')
+    .forEach((node) => node.remove());
+  stripXmlComments(clone);
 
   const world = clone.querySelector('#lonestar-world');
   if (world) {
     world.removeAttribute('transform');
   }
 
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
   const computed = getComputedStyle(document.documentElement);
-  const varsCss = EXPORT_CSS_VARS.map(
-    (v) => `${v}: ${computed.getPropertyValue(v).trim()};`,
-  ).join('\n  ');
+  const palette = resolveExportPalette(isDark ? 'dark' : 'light', computed);
+  const bgColor =
+    normalizePaintValue(palette['--bg-canvas'], palette).color ||
+    (isDark ? '#151412' : '#f6f4ef');
 
-  const bgColor = computed.getPropertyValue('--bg-canvas').trim() || '#f6f4ef';
+  resolveSvgDomAttributes(clone, palette);
 
   const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style');
-  styleEl.textContent = `
-:root, svg {
-  ${varsCss}
-  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-}
-text {
-  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-}
-`;
+  styleEl.textContent = `svg, text { font-family: ${EXPORT_FONT_FAMILY}; }`;
 
   let defs = clone.querySelector('defs');
   if (!defs) {
@@ -131,7 +322,7 @@ text {
   );
   clone.setAttribute('width', String(pixelWidth));
   clone.setAttribute('height', String(pixelHeight));
-  clone.removeAttribute('class');
+  clone.setAttribute('font-family', EXPORT_FONT_FAMILY);
 
   const serializer = new XMLSerializer();
   const svgMarkup = `<?xml version="1.0" encoding="UTF-8"?>\n${serializer.serializeToString(clone)}`;
@@ -169,7 +360,8 @@ export async function renderHighResPngBase64(
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const image = new Image();
       image.onload = () => resolve(image);
-      image.onerror = (err) => reject(new Error(`SVG rasterization failed: ${String(err)}`));
+      image.onerror = (err) =>
+        reject(new Error(`SVG rasterization failed: ${String(err)}`));
       image.src = url;
     });
 
