@@ -1,0 +1,57 @@
+# LoneStar — Implementation Plan & Progress
+
+## Phase 1: Project Setup & Clean Architecture Core (`lonestar-core`)
+- [x] Initialize `tasks/todo.md` and `tasks/lessons.md`
+- [x] Create Cargo workspace `Cargo.toml` and `crates/lonestar-core/Cargo.toml`
+- [x] Implement Domain layer (`entities.rs`, `errors.rs`, `validator.rs`) with full iStar 2.0 metamodel rules
+- [x] Implement Application layer (`ports.rs`, `service.rs`) with CRUD, connection validation, auto-layout, and stats
+- [x] Implement Infrastructure layer (`pistar.rs`, `repository.rs`, `templates.rs`) for piStar 2.0 JSON interop & canonical templates
+- [x] Add comprehensive unit tests in `lonestar-core` and verify `cargo test -p lonestar-core`
+
+## Phase 2: Tauri v2 Desktop Host (`src-tauri`)
+- [x] Create `src-tauri/Cargo.toml`, `build.rs`, `tauri.conf.json`, `capabilities/default.json`
+- [x] Generate valid RGBA app icons (`32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.png`, `icon.ico`, `icon.icns`)
+- [x] Implement `src-tauri/src/commands.rs`, `lib.rs`, `main.rs` delegating to `lonestar-core`
+- [x] Verify `cargo check --workspace` & `cargo test --workspace`
+
+## Phase 3: Svelte 5 Frontend (Clean Architecture & Zero-Bluish Warm Themes)
+- [x] Configure `package.json`, `tsconfig.json`, `vite.config.ts`, `index.html`, `.gitignore`
+- [x] Implement `src/app.css` with Warm Dark (charcoal/stone) & Warm Light (alabaster/ivory) themes (`R >= G >= B` on backgrounds)
+- [x] Implement Frontend Domain (`src/domain/types.ts`, `src/domain/istarRules.ts`)
+- [x] Implement Frontend Application Stores (`src/application/modelStore.svelte.ts`, `src/application/uiStore.svelte.ts`) with Svelte 5 Runes & Undo/Redo
+- [x] Implement Frontend Infrastructure (`backendAdapter.ts`, `pistarCodec.ts`, `exportService.ts` for Hi-Res PNG 2x/3x/4x, SVG, JSON)
+- [x] Implement Presentation Layer (`Toolbar.svelte`, `Palette.svelte`, `Canvas.svelte`, `ActorNode.svelte`, `ElementNode.svelte`, `LinkEdge.svelte`, `DependencyNode.svelte`, `Inspector.svelte`, `DependencyModal.svelte`, `App.svelte`)
+- [x] Add Vitest unit tests covering iStar 2.0 rules, piStar round-trip, export utilities, and non-bluish CSS invariants
+
+## Phase 4: GitHub Presentation Page & Multi-OS CI/CD
+- [x] Build GitHub Pages site (`docs/index.html`, `docs/styles.css`, `docs/app.js`) with OS auto-detection, multi-OS download hub, interactive iStar 2.0 showcase, and warm dark/light toggle
+- [x] Build CI workflow (`.github/workflows/ci.yml`), Multi-OS Tauri Release workflow (`.github/workflows/release.yml`), and GitHub Pages workflow (`.github/workflows/pages.yml`)
+
+## Phase 5: End-to-End Verification & Review
+- [x] `cargo test --workspace` passes (6/6 tests)
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes with zero warnings
+- [x] `npm test` passes (5/5 Vitest tests)
+- [x] `npm run check && npm run build` succeeds with zero TypeScript or Svelte warnings and bundles cleanly into `docs/demo/`
+- [x] Document engineering review in `tasks/todo.md`
+
+---
+
+## Final Engineering Review
+- **Clean Architecture Adherence**:
+  - `crates/lonestar-core/src/domain/` defines pure iStar 2.0 domain entities (`DiagramModel`, `Actor`, `IntentionalElement`, `Link`, `Dependency`) and formal metamodel constraint enforcement (`validator.rs`) without any UI, Tauri, or filesystem dependencies.
+  - `crates/lonestar-core/src/application/` encapsulates use cases (`ModelService`) and outbound ports (`ModelRepository`, `PiStarInteropPort`).
+  - `crates/lonestar-core/src/infrastructure/` implements the bidirectional piStar 2.0 JSON adapter, file persistence repository, and built-in canonical templates (`travel`, `telemedicine`).
+  - `src-tauri/` adapts Tauri v2 IPC commands and native save/open dialogs to `lonestar-core`.
+  - `src/` mirrors Clean Architecture in TypeScript + Svelte 5 Runes (`$state`, `$derived`) with seamless Tauri-desktop / browser-demo fallback via `backendAdapter.ts`.
+- **iStar 2.0 Fidelity & Usability**:
+  - Supports all actor variants (`Actor`, `Agent`, `Role` with official bar/crescent markers and expandable/collapsible SR boundaries), all intentional elements (`Goal`, `Quality`, `Task`, `Resource`), all internal links (`AndRefinement` T-bar, `OrRefinement` triangle, `NeededBy` circle, `Contribution` `make`/`help`/`hurt`/`break`, `Qualification` dashed), actor links (`IsA`, `ParticipatesIn`), and `Dependency` (`D` semicircle markers).
+  - Pointer-based drag-and-drop from the Palette works uniformly across Linux WebKitGTK, macOS, Windows, and web browsers, with automatic boundary containment and Smart Auto-Connect drag linking.
+- **Theme Constraint Verification**:
+  - Both `src/app.css` and `docs/styles.css` enforce `R >= G >= B` across all light (`#f6f4ef`, `#fcfbf8`, `#efece4`) and dark (`#151412`, `#1d1c19`, `#262420`) background tokens, automatically verified by Vitest.
+- **Verification Results**:
+  - `cargo fmt --all` — clean.
+  - `cargo clippy --workspace --all-targets -- -D warnings` — 0 warnings, 0 errors.
+  - `cargo test --workspace` — 6 passed, 0 failed.
+  - `npm run check` (`tsc --noEmit`) — 0 errors.
+  - `npm test` (Vitest) — 5 passed, 0 failed.
+  - `npm run build` (Vite + Svelte 5) — 0 errors, 0 warnings; deployed web studio bundle into `docs/demo/`.

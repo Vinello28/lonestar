@@ -1,0 +1,11 @@
+[package]
+name = "lonestar-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Clean Architecture domain, validation, and interoperability core for iStar 2.0 (i*) modeling"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

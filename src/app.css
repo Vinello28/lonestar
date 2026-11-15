@@ -1,0 +1,127 @@
+:root,
+:root[data-theme='light'] {
+  --bg-canvas: #f6f4ef;
+  --bg-grid-dot: #d8d4ca;
+  --bg-surface: #fcfbf8;
+  --bg-elevated: #efece4;
+  --bg-hover: #e7e3d8;
+  --bg-actor-boundary: rgba(235, 231, 222, 0.6);
+  --border-subtle: #dad5c9;
+  --border-strong: #bab3a4;
+  --border-actor: #7d776b;
+
+  --text-primary: #1f1d1a;
+  --text-secondary: #666156;
+  --text-muted: #8a8377;
+
+  --accent-primary: #b86114;
+  --accent-primary-hover: #9c4f0d;
+  --accent-soft: rgba(184, 97, 20, 0.13);
+
+  --status-success: #2f6f3e;
+  --status-warning: #a66914;
+  --status-error: #a82e24;
+
+  --actor-fill: #e3ebd9;
+  --actor-stroke: #4a5d3e;
+  --goal-fill: #fbe2c4;
+  --goal-stroke: #9c5618;
+  --quality-fill: #ece8d5;
+  --quality-stroke: #6b6332;
+  --task-fill: #f7eab8;
+  --task-stroke: #8a6814;
+  --resource-fill: #efeae2;
+  --resource-stroke: #625b50;
+
+  --link-stroke: #3d3932;
+  --link-label-bg: #fcfbf8;
+  --shadow-panel: 0 8px 24px rgba(31, 29, 26, 0.08);
+}
+
+:root[data-theme='dark'] {
+  --bg-canvas: #151412;
+  --bg-grid-dot: #2d2b27;
+  --bg-surface: #1d1c19;
+  --bg-elevated: #262420;
+  --bg-hover: #302d28;
+  --bg-actor-boundary: rgba(41, 39, 34, 0.6);
+  --border-subtle: #33302a;
+  --border-strong: #4a453d;
+  --border-actor: #8a8376;
+
+  --text-primary: #f3efe7;
+  --text-secondary: #aba498;
+  --text-muted: #7d776c;
+
+  --accent-primary: #e4943e;
+  --accent-primary-hover: #f0a452;
+  --accent-soft: rgba(228, 148, 62, 0.16);
+
+  --status-success: #6db87c;
+  --status-warning: #e0a348;
+  --status-error: #e0685c;
+
+  --actor-fill: #2c3227;
+  --actor-stroke: #9ab886;
+  --goal-fill: #3e2c1e;
+  --goal-stroke: #e8a35d;
+  --quality-fill: #353223;
+  --quality-stroke: #d4c87c;
+  --task-fill: #3a321e;
+  --task-stroke: #e6bf5a;
+  --resource-fill: #2e2b26;
+  --resource-stroke: #b5aca0;
+
+  --link-stroke: #d6cfc3;
+  --link-label-bg: #1d1c19;
+  --shadow-panel: 0 10px 28px rgba(10, 9, 8, 0.48);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}

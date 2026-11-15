@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LoneStar — Native iStar 2.0 (i*) Modeling Studio</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="navbar">
+      <div class="container nav-inner">
+        <a href="#top" class="brand">
+          <svg viewBox="0 0 32 32" class="brand-mark" aria-hidden="true">
+            <rect
+              x="2"
+              y="2"
+              width="28"
+              height="28"
+              rx="8"
+              fill="var(--bg-elevated)"
+              stroke="var(--accent-primary)"
+              stroke-width="2"
+            />
+            <circle
+              cx="16"
+              cy="16"
+              r="9.5"
+              fill="none"
+              stroke="var(--accent-primary)"
+              stroke-width="1.8"
+            />
+            <polygon
+              points="16,9 18,14 23,14 19,17 20.5,22 16,19 11.5,22 13,17 9,14 14,14"
+              fill="var(--accent-primary)"
+            />
+          </svg>
+          <span>LoneStar</span>
+        </a>
+
+        <nav class="nav-links" aria-label="Primary Navigation">
+          <a href="#downloads">Downloads</a>
+          <a href="#features">Features</a>
+          <a href="#istar2">iStar 2.0 Notation</a>
+          <a href="#architecture">Clean Architecture</a>
+          <a href="./demo/index.html">Web Studio</a>
+        </nav>
+
+        <button type="button" id="theme-toggle" class="theme-toggle">
+          ☾ Dark Mode
+        </button>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="container hero-grid">
+          <div>
+            <span class="eyebrow">Rust · Tauri v2 · Svelte 5 · iStar 2.0</span>
+            <h1>Fast, intuitive i* 2.0 modeling without browser freezes.</h1>
+            <p class="hero-sub">
+              Built for Software Engineering students and requirements
+              architects tired of slow, fragile web canvas tools. Drag actors,
+              goals, tasks, resources, and smart-validated links effortlessly —
+              export crisp 4× PNGs, Vector SVGs, or piStar-compatible JSON.
+            </p>
+
+            <div class="cta-row">
+              <a id="primary-download-btn" href="#downloads" class="btn btn-primary">
+                Download LoneStar
+              </a>
+              <a href="./demo/index.html" class="btn">
+                Try Live Web Studio →
+              </a>
+            </div>
+            <div id="os-detected-note" class="detected-note">
+              Cross-platform native installers for Linux, Windows & macOS.
+            </div>
+          </div>
+
+          <div class="preview-card" aria-label="iStar 2.0 Diagram Preview">
+            <svg viewBox="0 0 440 310" width="100%" height="auto">
+              <rect
+                x="14"
+                y="24"
+                width="190"
+                height="262"
+                rx="22"
+                fill="var(--bg-elevated)"
+                stroke="var(--border-strong)"
+                stroke-width="1.6"
+                stroke-dasharray="6 4"
+              />
+              <circle
+                cx="109"
+                cy="34"
+                r="24"
+                fill="#e3ebd9"
+                stroke="#4a5d3e"
+                stroke-width="1.8"
+              />
+              <path
+                d="M 88 44 Q 109 36 130 44"
+                fill="none"
+                stroke="#4a5d3e"
+                stroke-width="1.5"
+              />
+              <text x="109" y="38" text-anchor="middle" font-size="11" font-weight="700" fill="#1f1d1a">
+                Student
+              </text>
+
+              <rect
+                x="56"
+                y="84"
+                width="106"
+                height="40"
+                rx="20"
+                fill="#fbe2c4"
+                stroke="#9c5618"
+                stroke-width="1.6"
+              />
+              <text x="109" y="108" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1f1d1a">
+                Travel Reimbursed
+              </text>
+
+              <polygon
+                points="32,190 44,170 112,170 124,190 112,210 44,210"
+                fill="#f7eab8"
+                stroke="#8a6814"
+                stroke-width="1.6"
+              />
+              <text x="78" y="194" text-anchor="middle" font-size="10" font-weight="600" fill="#1f1d1a">
+                Submit Claim
+              </text>
+
+              <rect
+                x="62"
+                y="236"
+                width="96"
+                height="34"
+                rx="3"
+                fill="#efeae2"
+                stroke="#625b50"
+                stroke-width="1.6"
+              />
+              <text x="110" y="257" text-anchor="middle" font-size="10" font-weight="600" fill="#1f1d1a">
+                Receipts
+              </text>
+
+              <!-- AND refinement + NeededBy -->
+              <line x1="78" y1="170" x2="98" y2="128" stroke="var(--text-primary)" stroke-width="1.5" />
+              <line x1="89" y1="130" x2="105" y2="138" stroke="var(--text-primary)" stroke-width="2" />
+              <line x1="108" y1="236" x2="92" y2="215" stroke="var(--text-primary)" stroke-width="1.5" />
+              <circle cx="91" cy="214" r="4" fill="var(--bg-surface)" stroke="var(--text-primary)" stroke-width="1.5" />
+
+              <!-- Dependee Agent -->
+              <rect
+                x="286"
+                y="54"
+                width="140"
+                height="186"
+                rx="22"
+                fill="var(--bg-elevated)"
+                stroke="var(--border-strong)"
+                stroke-width="1.6"
+                stroke-dasharray="6 4"
+              />
+              <circle
+                cx="356"
+                cy="62"
+                r="24"
+                fill="#e3ebd9"
+                stroke="#4a5d3e"
+                stroke-width="1.8"
+              />
+              <line x1="336" y1="50" x2="376" y2="50" stroke="#4a5d3e" stroke-width="1.5" />
+              <text x="356" y="68" text-anchor="middle" font-size="10.5" font-weight="700" fill="#1f1d1a">
+                University
+              </text>
+
+              <rect
+                x="306"
+                y="132"
+                width="100"
+                height="38"
+                rx="19"
+                fill="#fbe2c4"
+                stroke="#9c5618"
+                stroke-width="1.6"
+              />
+              <text x="356" y="155" text-anchor="middle" font-size="10" font-weight="600" fill="#1f1d1a">
+                Verify Audit
+              </text>
+
+              <!-- Social Dependency -->
+              <line x1="162" y1="104" x2="214" y2="122" stroke="var(--text-primary)" stroke-width="1.5" />
+              <line x1="274" y1="138" x2="306" y2="148" stroke="var(--text-primary)" stroke-width="1.5" />
+              <rect
+                x="206"
+                y="112"
+                width="80"
+                height="34"
+                rx="17"
+                fill="#fbe2c4"
+                stroke="#9c5618"
+                stroke-width="1.6"
+              />
+              <text x="246" y="133" text-anchor="middle" font-size="10" font-weight="600" fill="#1f1d1a">
+                Approval
+              </text>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <section id="downloads" class="section">
+        <div class="container">
+          <div class="section-header">
+            <h2>Download LoneStar Desktop</h2>
+            <p id="release-version-label">
+              Native cross-platform packages compiled by GitHub Actions CI/CD.
+            </p>
+          </div>
+
+          <div class="cards-3">
+            <article class="card" data-os="linux">
+              <h3>Linux</h3>
+              <p>Native WebKitGTK &amp; Rust binary with zero Electron overhead.</p>
+              <div class="dl-list">
+                <a class="dl-link" data-asset-match=".AppImage" href="#">
+                  <span>Universal AppImage</span>
+                  <span class="dl-badge">.AppImage</span>
+                </a>
+                <a class="dl-link" data-asset-match=".deb" href="#">
+                  <span>Debian / Ubuntu</span>
+                  <span class="dl-badge">.deb</span>
+                </a>
+                <a class="dl-link" data-asset-match=".rpm" href="#">
+                  <span>Fedora / RHEL</span>
+                  <span class="dl-badge">.rpm</span>
+                </a>
+              </div>
+            </article>
+
+            <article class="card" data-os="windows">
+              <h3>Windows</h3>
+              <p>Signed-ready native WebView2 desktop installers for Windows 10/11.</p>
+              <div class="dl-list">
+                <a class="dl-link" data-asset-match=".msi" href="#">
+                  <span>Windows Installer (x64)</span>
+                  <span class="dl-badge">.msi</span>
+                </a>
+                <a class="dl-link" data-asset-match="-setup.exe" href="#">
+                  <span>NSIS Setup Executable</span>
+                  <span class="dl-badge">.exe</span>
+                </a>
+              </div>
+            </article>
+
+            <article class="card" data-os="macos">
+              <h3>macOS</h3>
+              <p>Universal native WKWebView app bundles for Apple Silicon &amp; Intel.</p>
+              <div class="dl-list">
+                <a class="dl-link" data-asset-match="aarch64.dmg" href="#">
+                  <span>Apple Silicon (M1–M4)</span>
+                  <span class="dl-badge">.dmg</span>
+                </a>
+                <a class="dl-link" data-asset-match="x64.dmg" href="#">
+                  <span>Intel (x86_64)</span>
+                  <span class="dl-badge">.dmg</span>
+                </a>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="section">
+        <div class="container">
+          <div class="section-header">
+            <h2>Engineered to Replace Clunky Modeling Tools</h2>
+            <p>Every interaction designed to let you focus on modeling rather than fighting the UI.</p>
+          </div>
+
+          <div class="cards-4">
+            <article class="card">
+              <h3>Drag &amp; Drop Board</h3>
+              <p>
+                Drag Actors, Roles, Agents, Goals, Qualities, Tasks, and Resources directly onto the canvas with automatic boundary containment.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Smart Auto-Connect</h3>
+              <p>
+                Drag from any port to another node: LoneStar infers Needed-By, Contribution, Qualification, Refinements, or Dependencies in 0ms.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Hi-Res &amp; JSON Export</h3>
+              <p>
+                Export 2×/3×/4× Retina PNGs for theses &amp; papers, clean Vector SVGs, LoneStar JSON, and full piStar 2.0 compatible JSON.
+              </p>
+            </article>
+            <article class="card">
+              <h3>Warm Light &amp; Dark</h3>
+              <p>
+                Tactile architectural alabaster light mode and warm obsidian dark mode — carefully tuned with zero bluish background glare.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="istar2" class="section">
+        <div class="container">
+          <div class="section-header">
+            <h2>Complete iStar 2.0 Metamodel Support</h2>
+            <p>Built-in static constraint checks enforce the official Dalpiaz, Franch &amp; Horkoff iStar 2.0 Language Guide.</p>
+          </div>
+
+          <table class="arch-table">
+            <thead>
+              <tr>
+                <th>Construct</th>
+                <th>iStar 2.0 Semantics</th>
+                <th>Enforced Metamodel Guard</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Actor / Agent / Role</strong></td>
+                <td>Autonomous entities &amp; Strategic Rationale boundaries</td>
+                <td>No cycles in <code>is-a</code> / <code>participates-in</code>; <code>is-a</code> requires matching Actor/Role types</td>
+              </tr>
+              <tr>
+                <td><strong>Goal / Quality / Task / Resource</strong></td>
+                <td>Intentional elements inside SR boundaries or Dependums</td>
+                <td>Automatic boundary ownership tracking &amp; orphan detection</td>
+              </tr>
+              <tr>
+                <td><strong>AND / OR Refinement</strong></td>
+                <td>Hierarchical decomposition of Goals and Tasks</td>
+                <td>Restricted to Goal/Task within same boundary; acyclic DAG check</td>
+              </tr>
+              <tr>
+                <td><strong>Needed-By &amp; Qualification</strong></td>
+                <td>Resource → Task &amp; Quality → Goal/Task/Resource</td>
+                <td>Strict endpoint kind verification inside the actor boundary</td>
+              </tr>
+              <tr>
+                <td><strong>Contribution</strong></td>
+                <td><code>make</code>, <code>help</code>, <code>hurt</code>, <code>break</code> impact on Qualities</td>
+                <td>Target must be a Quality; 1-click badge cycling on canvas</td>
+              </tr>
+              <tr>
+                <td><strong>Social Dependency (D)</strong></td>
+                <td>Depender → Dependum → Dependee across distinct actors</td>
+                <td>Depender/Dependee elements verified against owning Actor boundary</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="architecture" class="section">
+        <div class="container">
+          <div class="section-header">
+            <h2>Clean Architecture Stack</h2>
+            <p>Strict dependency inversion across Rust (`lonestar-core`) and Svelte 5 Runes (`src/`).</p>
+          </div>
+
+          <div class="cards-4">
+            <article class="card">
+              <h3>1. Domain Layer</h3>
+              <p>Pure Rust entities (`DiagramModel`, `Actor`, `Link`) and the formal iStar 2.0 validator with zero UI dependencies.</p>
+            </article>
+            <article class="card">
+              <h3>2. Application Layer</h3>
+              <p>`ModelService` use cases, repository ports, auto-layout, and Svelte 5 `$state` / `$derived` stores with Undo/Redo.</p>
+            </article>
+            <article class="card">
+              <h3>3. Infrastructure Layer</h3>
+              <p>Bidirectional piStar v2.0 JSON interop codec, disk repository, canonical templates, and Hi-Res PNG/SVG exporter.</p>
+            </article>
+            <article class="card">
+              <h3>4. Presentation Layer</h3>
+              <p>Tauri v2 IPC commands + responsive Svelte 5 SVG board delivering 60fps interaction across Linux, Windows, and macOS.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer-inner">
+        <span>LoneStar — Open-source iStar 2.0 Modeling Studio (MIT License)</span>
+        <a id="repo-releases-link" href="https://github.com" target="_blank" rel="noreferrer">
+          View All Releases on GitHub →
+        </a>
+      </div>
+    </footer>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
