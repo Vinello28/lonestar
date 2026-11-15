@@ -1,5 +1,6 @@
 :root,
 :root[data-theme='light'] {
+  color-scheme: light;
   --bg-canvas: #f6f4ef;
   --bg-grid-dot: #d8d4ca;
   --bg-surface: #fcfbf8;
@@ -39,6 +40,7 @@
 }
 
 :root[data-theme='dark'] {
+  color-scheme: dark;
   --bg-canvas: #151412;
   --bg-grid-dot: #2d2b27;
   --bg-surface: #1d1c19;
@@ -106,6 +108,11 @@ textarea {
   font-family: inherit;
   font-size: inherit;
   color: inherit;
+}
+
+select option {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
 }
 
 button {

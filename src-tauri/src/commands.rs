@@ -5,6 +5,8 @@ use serde::Serialize;
 use std::fs;
 use std::path::Path;
 
+use crate::agent::{list_provider_models, run_agent_turn, AgentTurnRequest, AgentTurnResponse};
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppRuntimeInfo {
@@ -85,6 +87,19 @@ pub fn save_file_to_disk(path: String, contents: String, is_base64: bool) -> Res
 #[tauri::command]
 pub fn read_file_from_disk(path: String) -> Result<String, String> {
     fs::read_to_string(Path::new(&path)).map_err(|e| format!("Failed to read file: {e}"))
+}
+
+#[tauri::command]
+pub async fn agent_list_models(
+    base_url: String,
+    api_key: Option<String>,
+) -> Result<Vec<String>, String> {
+    list_provider_models(&base_url, api_key.as_deref()).await
+}
+
+#[tauri::command]
+pub async fn agent_run_turn(request: AgentTurnRequest) -> Result<AgentTurnResponse, String> {
+    run_agent_turn(request).await
 }
 
 fn decode_base64(input: &str) -> Result<Vec<u8>, String> {

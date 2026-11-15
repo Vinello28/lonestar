@@ -24,6 +24,44 @@ export interface AppRuntimeInfo {
   arch: string;
 }
 
+export type AgentProviderPreset =
+  | 'lmstudio'
+  | 'ollama'
+  | 'openai'
+  | 'openrouter'
+  | 'custom';
+
+export interface AgentProviderConfig {
+  providerPreset: AgentProviderPreset;
+  baseUrl: string;
+  model: string;
+  apiKey: string;
+  temperature: number;
+  includeIstarDocs: boolean;
+}
+
+export interface AgentChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AgentTurnRequest {
+  config: AgentProviderConfig;
+  modelState: DiagramModel;
+  selectedEntityId: string | null;
+  history: AgentChatMessage[];
+  userPrompt: string;
+}
+
+export interface AgentTurnResponse {
+  assistantMessage: string;
+  updatedModel: DiagramModel;
+  appliedOperations: string[];
+  repairedWarnings: string[];
+  errors: string[];
+  validationIssues: ValidationIssue[];
+}
+
 export const backendAdapter = {
   async getAppInfo(): Promise<AppRuntimeInfo> {
     if (isTauriRuntime()) {
@@ -133,6 +171,23 @@ export const backendAdapter = {
     });
     if (!selected || typeof selected !== 'string') return null;
     return tauriInvoke<string>('read_file_from_disk', { path: selected });
+  },
+
+  async agentListModels(baseUrl: string, apiKey?: string): Promise<string[]> {
+    if (!isTauriRuntime()) {
+      throw new Error('AI Agent is only available in the LoneStar Desktop app.');
+    }
+    return tauriInvoke<string[]>('agent_list_models', {
+      baseUrl,
+      apiKey: apiKey?.trim() || null,
+    });
+  },
+
+  async agentRunTurn(request: AgentTurnRequest): Promise<AgentTurnResponse> {
+    if (!isTauriRuntime()) {
+      throw new Error('AI Agent is only available in the LoneStar Desktop app.');
+    }
+    return tauriInvoke<AgentTurnResponse>('agent_run_turn', { request });
   },
 };
 

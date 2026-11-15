@@ -1,7 +1,14 @@
 <script lang="ts">
+  import {
+    AGENT_PRESET_DEFAULTS,
+    agentStore,
+  } from '../application/agentStore.svelte';
   import { uiStore } from '../application/uiStore.svelte';
   import { updateStore } from '../application/updateStore.svelte';
-  import { isTauriRuntime } from '../infrastructure/backendAdapter';
+  import {
+    isTauriRuntime,
+    type AgentProviderPreset,
+  } from '../infrastructure/backendAdapter';
   import CowboyPandaIcon from './shapes/CowboyPandaIcon.svelte';
 
   function closeModal() {
@@ -152,6 +159,133 @@
           </button>
         </div>
       </section>
+
+      {#if isTauriRuntime()}
+        <section class="settings-section">
+          <div class="section-head">
+            <h3>Local &amp; Cloud AI Agent</h3>
+            <span class="checked-time">Desktop only · OpenAI-compatible</span>
+          </div>
+
+          <div class="agent-grid">
+            <label class="agent-field">
+              <span>Provider Preset</span>
+              <select
+                value={agentStore.config.providerPreset}
+                onchange={(e) =>
+                  agentStore.applyPreset(
+                    (e.target as HTMLSelectElement).value as AgentProviderPreset,
+                  )}
+              >
+                {#each Object.entries(AGENT_PRESET_DEFAULTS) as [key, spec]}
+                  <option value={key}>{spec.label}</option>
+                {/each}
+                <option value="custom">Custom OpenAI-Compatible</option>
+              </select>
+            </label>
+
+            <label class="agent-field">
+              <span>Temperature ({agentStore.config.temperature.toFixed(1)})</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.1"
+                value={agentStore.config.temperature}
+                oninput={(e) =>
+                  agentStore.updateConfig({
+                    temperature: parseFloat((e.target as HTMLInputElement).value),
+                  })}
+              />
+            </label>
+          </div>
+
+          <label class="agent-field">
+            <span>API Base URL</span>
+            <input
+              type="text"
+              value={agentStore.config.baseUrl}
+              placeholder="http://localhost:1234/v1"
+              onchange={(e) =>
+                agentStore.updateConfig({
+                  baseUrl: (e.target as HTMLInputElement).value,
+                })}
+            />
+          </label>
+
+          <div class="agent-model-row">
+            <label class="agent-field agent-model-input">
+              <span>Model ID</span>
+              <input
+                type="text"
+                value={agentStore.config.model}
+                placeholder="google/gemma-4-e4b"
+                onchange={(e) =>
+                  agentStore.updateConfig({
+                    model: (e.target as HTMLInputElement).value,
+                  })}
+              />
+            </label>
+            <button
+              type="button"
+              class="btn"
+              onclick={() => void agentStore.detectModels()}
+            >
+              Detect Local Models
+            </button>
+          </div>
+
+          {#if agentStore.availableModels.length > 0}
+            <div class="detected-models">
+              {#each agentStore.availableModels as m}
+                <button
+                  type="button"
+                  class="detected-pill"
+                  class:active={agentStore.config.model === m}
+                  onclick={() => agentStore.updateConfig({ model: m })}
+                >
+                  {m}
+                </button>
+              {/each}
+            </div>
+          {/if}
+
+          {#if agentStore.connectionMessage}
+            <div
+              class="agent-conn-note"
+              class:ok={agentStore.connectionStatus === 'ok'}
+              class:err={agentStore.connectionStatus === 'error'}
+            >
+              {agentStore.connectionMessage}
+            </div>
+          {/if}
+
+          <label class="agent-field">
+            <span>API Key (optional — leave blank for LM Studio / Ollama)</span>
+            <input
+              type="password"
+              value={agentStore.config.apiKey}
+              placeholder="sk-…"
+              onchange={(e) =>
+                agentStore.updateConfig({
+                  apiKey: (e.target as HTMLInputElement).value,
+                })}
+            />
+          </label>
+
+          <label class="toggle-row">
+            <input
+              type="checkbox"
+              checked={agentStore.config.includeIstarDocs}
+              onchange={(e) =>
+                agentStore.updateConfig({
+                  includeIstarDocs: (e.target as HTMLInputElement).checked,
+                })}
+            />
+            <span>Include iStar 2.0 Metamodel Guide in System Prompt</span>
+          </label>
+        </section>
+      {/if}
 
       <section class="settings-section">
         <h3>Project & Downloads</h3>
@@ -442,5 +576,84 @@
     font-size: 10.5px;
     color: var(--accent-primary);
     word-break: break-all;
+  }
+
+  .agent-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 10px;
+  }
+
+  .agent-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .agent-field > span {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+
+  .agent-field input[type='text'],
+  .agent-field input[type='password'],
+  .agent-field select {
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    font-size: 12.5px;
+    outline: none;
+  }
+
+  .agent-field input[type='text']:focus,
+  .agent-field input[type='password']:focus,
+  .agent-field select:focus {
+    border-color: var(--accent-primary);
+  }
+
+  .agent-model-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .agent-model-input {
+    flex: 1;
+  }
+
+  .detected-models {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .detected-pill {
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .detected-pill.active {
+    background: var(--accent-soft);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+  }
+
+  .agent-conn-note {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+  }
+
+  .agent-conn-note.ok {
+    color: var(--status-success);
+  }
+
+  .agent-conn-note.err {
+    color: var(--status-error);
   }
 </style>

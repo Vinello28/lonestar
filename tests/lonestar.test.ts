@@ -18,6 +18,12 @@ import {
   importAnyJsonModel,
 } from '../src/infrastructure/pistarCodec';
 import { compareSemver } from '../src/application/updateStore.svelte';
+import {
+  AGENT_PRESET_DEFAULTS,
+  agentStore,
+  defaultAgentConfig,
+} from '../src/application/agentStore.svelte';
+import { isTauriRuntime } from '../src/infrastructure/backendAdapter';
 
 describe('iStar 2.0 client metamodel rules', () => {
   it('validates canonical travel and telemedicine templates cleanly', () => {
@@ -301,5 +307,30 @@ describe('Warm theme invariant (no bluish background tint)', () => {
         expect(g, `${file}: ${val} has B > G`).toBeGreaterThanOrEqual(b);
       }
     }
+  });
+});
+
+describe('AI Agent defaults & Web Studio isolation', () => {
+  it('defaults to local LM Studio Gemma 4 E4B and switches presets cleanly', () => {
+    expect(isTauriRuntime()).toBe(false);
+
+    const defaults = defaultAgentConfig();
+    expect(defaults.providerPreset).toBe('lmstudio');
+    expect(defaults.baseUrl).toBe('http://localhost:1234/v1');
+    expect(defaults.model).toBe('google/gemma-4-e4b');
+    expect(defaults.includeIstarDocs).toBe(true);
+
+    expect(AGENT_PRESET_DEFAULTS.ollama.baseUrl).toBe('http://localhost:11434/v1');
+    expect(AGENT_PRESET_DEFAULTS.openai.requiresKey).toBe(true);
+    expect(AGENT_PRESET_DEFAULTS.openrouter.baseUrl).toBe('https://openrouter.ai/api/v1');
+
+    agentStore.applyPreset('ollama');
+    expect(agentStore.config.providerPreset).toBe('ollama');
+    expect(agentStore.config.baseUrl).toBe('http://localhost:11434/v1');
+    expect(agentStore.config.model).toBe('gemma4:e4b');
+
+    agentStore.applyPreset('lmstudio');
+    expect(agentStore.config.providerPreset).toBe('lmstudio');
+    expect(agentStore.config.baseUrl).toBe('http://localhost:1234/v1');
   });
 });

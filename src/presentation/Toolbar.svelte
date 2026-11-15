@@ -16,13 +16,46 @@
     onFitToScreen: () => void;
   }
 
+  const TEMPLATE_OPTIONS = [
+    { value: 'travel', label: 'Travel Reimbursement (i* 2.0)' },
+    { value: 'telemedicine', label: 'Telemedicine System (i* 2.0)' },
+    { value: 'empty', label: 'Blank Canvas' },
+  ] as const;
+
   let { svgRef, onFitToScreen }: Props = $props();
   let fileInputRef: HTMLInputElement | null = $state(null);
   let exporting = $state(false);
+  let templateMenuOpen = $state(false);
+  let selectedTemplate = $state('');
+  let templateDropdownRef: HTMLDivElement | null = $state(null);
 
-  async function handleTemplateChange(e: Event) {
-    const val = (e.target as HTMLSelectElement).value;
-    if (!val) return;
+  const selectedTemplateLabel = $derived(
+    TEMPLATE_OPTIONS.find((opt) => opt.value === selectedTemplate)?.label ?? 'Choose Template…'
+  );
+
+  $effect(() => {
+    if (!templateMenuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (templateDropdownRef && !templateDropdownRef.contains(e.target as Node)) {
+        templateMenuOpen = false;
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        templateMenuOpen = false;
+      }
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  });
+
+  async function selectTemplate(val: string) {
+    templateMenuOpen = false;
+    selectedTemplate = val;
     await modelStore.loadTemplate(val);
     uiStore.selection = null;
     setTimeout(onFitToScreen, 20);
@@ -181,16 +214,40 @@
     </div>
 
     <div class="file-controls">
-      <select
-        class="tb-select hero-control"
-        aria-label="Load Template"
-        onchange={handleTemplateChange}
-      >
-        <option value="">Choose Template…</option>
-        <option value="travel">Travel Reimbursement (i* 2.0)</option>
-        <option value="telemedicine">Telemedicine System (i* 2.0)</option>
-        <option value="empty">Blank Canvas</option>
-      </select>
+      <div class="template-dropdown" bind:this={templateDropdownRef}>
+        <button
+          type="button"
+          class="tb-select hero-control template-trigger"
+          aria-label="Load Template"
+          aria-haspopup="menu"
+          aria-expanded={templateMenuOpen}
+          onclick={() => (templateMenuOpen = !templateMenuOpen)}
+        >
+          <span class="template-trigger-label">{selectedTemplateLabel}</span>
+          <span class="template-caret" aria-hidden="true">▾</span>
+        </button>
+
+        {#if templateMenuOpen}
+          <div class="dropdown-menu template-menu" role="menu">
+            <div class="dropdown-section">Diagram Templates</div>
+            {#each TEMPLATE_OPTIONS as opt (opt.value)}
+              <button
+                type="button"
+                class="menu-action template-option"
+                class:active={selectedTemplate === opt.value}
+                role="menuitemradio"
+                aria-checked={selectedTemplate === opt.value}
+                onclick={() => selectTemplate(opt.value)}
+              >
+                <span>{opt.label}</span>
+                {#if selectedTemplate === opt.value}
+                  <span class="template-check" aria-hidden="true">✓</span>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
 
       <button
         type="button"
@@ -333,6 +390,19 @@
       {uiStore.theme === 'light' ? '☾ Dark' : '☀ Light'}
     </button>
 
+    {#if isTauriRuntime()}
+      <button
+        type="button"
+        class="tb-btn agent-btn"
+        class:active-agent={uiStore.agentPanelOpen}
+        onclick={() => uiStore.toggleAgentPanel()}
+        title="Open Local / Cloud AI Modeling Agent"
+        aria-label="Toggle AI Agent"
+      >
+        ✦ AI Agent
+      </button>
+    {/if}
+
     <button
       type="button"
       class="tb-btn settings-btn"
@@ -455,6 +525,12 @@
     align-items: center;
     gap: 6px;
     position: relative;
+  }
+
+  .agent-btn.active-agent {
+    background: var(--accent-soft);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
   }
 
   .update-dot {
@@ -595,5 +671,56 @@
   .menu-action:hover {
     border-color: var(--accent-primary);
     background: var(--bg-hover);
+  }
+
+  .template-dropdown {
+    position: relative;
+  }
+
+  .template-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    text-align: left;
+    color: var(--text-primary);
+  }
+
+  .template-trigger-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .template-caret {
+    color: var(--text-secondary);
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  .dropdown-menu.template-menu {
+    left: 0;
+    right: auto;
+    top: 48px;
+    width: 268px;
+  }
+
+  .template-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--text-primary);
+  }
+
+  .template-option.active {
+    background: var(--accent-soft);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+  }
+
+  .template-check {
+    font-size: 12px;
+    font-weight: 700;
   }
 </style>

@@ -5,6 +5,8 @@
   import { updateStore } from './application/updateStore.svelte';
   import { findActorAtPoint } from './domain/istarRules';
   import type { ActorKind, ElementKind } from './domain/types';
+  import { isTauriRuntime } from './infrastructure/backendAdapter';
+  import AgentPanel from './presentation/AgentPanel.svelte';
   import Canvas, { type ActivePaletteGhost } from './presentation/Canvas.svelte';
   import DependencyModal from './presentation/DependencyModal.svelte';
   import Inspector from './presentation/Inspector.svelte';
@@ -170,6 +172,12 @@
     />
 
     <Inspector />
+
+    {#if isTauriRuntime() && uiStore.agentPanelOpen}
+      <AgentPanel
+        onAfterModelUpdate={() => setTimeout(() => canvasRef?.fitToScreen(), 25)}
+      />
+    {/if}
   </main>
 
   <DependencyModal />

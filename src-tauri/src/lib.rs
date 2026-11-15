@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -24,6 +25,8 @@ pub fn run() {
             commands::auto_layout_model,
             commands::save_file_to_disk,
             commands::read_file_from_disk,
+            commands::agent_list_models,
+            commands::agent_run_turn,
         ])
         .run(tauri::generate_context!())
         .expect("error while running LoneStar Tauri application");

@@ -28,6 +28,7 @@ class UiStore {
   validationDrawerOpen = $state<boolean>(false);
   exportMenuOpen = $state<boolean>(false);
   settingsModalOpen = $state<boolean>(false);
+  agentPanelOpen = $state<boolean>(false);
   pngScale = $state<2 | 3 | 4>(3);
   transparentExport = $state<boolean>(false);
   toast = $state<{ text: string; tone: 'info' | 'success' | 'error' } | null>(
@@ -58,6 +59,10 @@ class UiStore {
 
   toggleTheme(): void {
     this.setTheme(this.theme === 'light' ? 'dark' : 'light');
+  }
+
+  toggleAgentPanel(): void {
+    this.agentPanelOpen = !this.agentPanelOpen;
   }
 
   notify(text: string, tone: 'info' | 'success' | 'error' = 'info'): void {

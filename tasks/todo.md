@@ -41,6 +41,14 @@
 - [x] Integrate Tauri v2 updater, process & opener plugins (`tauri-plugin-updater`, `latest.json` CI release, startup auto-check)
 - [x] Build `SettingsModal.svelte` (version badge, check updates button, GitHub Page & Releases links) and update `docs/` site
 
+## Phase 7: In-App Local & Cloud AI Agent (Tauri Desktop Only)
+- [x] Implement `crates/lonestar-core/src/application/agent.rs` (declarative `AgentOperation` batch executor, name/ID resolution, metamodel auto-repair, compact semantic context summarizer, iStar 2.0 system prompt & tool schema, fenced JSON fallback extractor)
+- [x] Add `reqwest` OpenAI-compatible HTTP client & agent orchestrator (`src-tauri/src/agent.rs`) with LM Studio / Ollama / Cloud presets, tool-call + HTTP 400 non-tool fallback, and 2-round self-correction loop; expose Tauri commands `agent_list_models` and `agent_run_turn`
+- [x] Implement `src/infrastructure/backendAdapter.ts` IPC methods, `uiStore.agentPanelOpen`, and `src/application/agentStore.svelte.ts` (persisted presets/config, atomic Undo/Redo mutations)
+- [x] Implement Desktop-only UI (`AgentPanel.svelte`, Toolbar `✦ AI Agent` toggle, SettingsModal `Local & Cloud AI Agent` section, `App.svelte` workspace wiring) strictly guarded by `isTauriRuntime()` and warm theme `R >= G >= B`
+- [x] Add Rust & Vitest unit/integration tests covering batch operations, metamodel auto-repair, fenced block extraction, and agentStore preset defaults
+- [x] Run full verification suite (`cargo fmt`, `cargo clippy`, `cargo test`, `npm run check`, `npm test`, `npm run build`) and document final review
+
 ---
 
 ## Final Engineering Review
@@ -59,7 +67,12 @@
 - **Verification Results**:
   - `cargo fmt --all -- --check` — clean.
   - `cargo clippy --workspace --all-targets -- -D warnings` — 0 warnings, 0 errors.
-  - `cargo test --workspace` — 7 passed, 0 failed.
+  - `cargo test --workspace` — 11 passed, 0 failed (`lonestar-core` integration suite including 4 AI Agent tests).
+  - Live LM Studio E2E (`live_lmstudio_gemma4_e4b_end_to_end` against `http://localhost:1234/v1` with `google/gemma-4-e4b`) — passed in 8.81s (14 applied operations, 0 errors, 0 validation issues).
   - `npm run check` (`tsc --noEmit`) — 0 errors.
-  - `npm test` (Vitest) — 6 passed, 0 failed.
-  - `npm run build` (Vite + Svelte 5) — 0 errors, 0 warnings; deployed web studio bundle into `docs/demo/`.
+  - `npm test` (Vitest) — 7 passed, 0 failed (including AI Agent defaults & preset switching test and warm theme invariant).
+  - `npm run build` (Vite + Svelte 5) — 0 errors, 0 warnings (`dist/` bundle built cleanly).
+- **Phase 7 AI Agent Architecture Summary**:
+  - **Core (`crates/lonestar-core/src/application/agent.rs`)**: Pure domain/application declarative batch engine (`execute_agent_operations`) supporting ID or case-insensitive name resolution, automatic iStar 2.0 metamodel repairs (e.g., flipping reversed `NeededBy`/`Qualification`/`Contribution`, converting invalid `Agent` `IsA` links to `ParticipatesIn`, converting cross-boundary SR links into social `Dependency` links), automatic `ModelService::auto_layout`, compact semantic context summaries, system prompt with iStar 2.0 guide, OpenAI tool schema (`apply_istar_operations`), and fenced ` ```istar-ops ` / ` ```json ` fallback extraction.
+  - **Tauri Backend (`src-tauri/src/agent.rs`, `commands.rs`, `lib.rs`)**: OpenAI-compatible HTTP client via `reqwest` (`rustls` + `ring`) exposing `agent_list_models` and `agent_run_turn` with automatic HTTP 400/422 non-tool fallback for local Jinja templates (LM Studio / Ollama) and a 2-round self-correction loop.
+  - **Desktop-Only Frontend (`agentStore.svelte.ts`, `AgentPanel.svelte`, `Toolbar.svelte`, `SettingsModal.svelte`, `App.svelte`)**: Guarded strictly by `isTauriRuntime()` so the GitHub Pages Web Studio stays unaffected, with persisted presets (`LM Studio`, `Ollama`, `OpenAI`, `OpenRouter`, `Custom`), selection-aware context badge, quick action chips, expandable operation/repair badges, and single-snapshot `modelStore` Undo/Redo.
