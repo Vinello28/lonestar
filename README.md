@@ -15,6 +15,8 @@
     <a href="#clean-architecture"><strong>🧱 Architecture</strong></a>
   </p>
 
+  ![Copertina](docs/screenshot/rdm1.png)
+
   <p>
     <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust" />
     <img src="https://img.shields.io/badge/Tauri_v2-24C8D8?style=for-the-badge&logo=tauri&logoColor=white" alt="Tauri v2" />
@@ -32,13 +34,14 @@
 
 ## Why LoneStar?
 
-**LoneStar** was engineered as a fast, deterministic alternative to legacy browser-based $i^*$ editors (such as web piStar) that suffer from canvas lag, layout freezes, and brittle link handling during medium-to-large Software Engineering modeling sessions.
+**LoneStar** is a fast, deterministic desktop and web modeling studio for medium-to-large Software Engineering $i^*$ sessions — built to complement the **piStar 2.0** ecosystem with native performance, real-time metamodel guidance, and seamless bidirectional `.json`/`.txt` interoperability.
 
 - **Zero-Code Drag & Drop Board**: Drag Actors (`Actor`, `Agent`, `Role`) and Intentional Elements (`Goal`, `Quality`, `Task`, `Resource`) from the palette onto an infinite pan/zoom SVG canvas with 60fps native rendering and 60-step Undo/Redo history.
 - **Smart Auto-Connect & Live Metamodel Validation**: Drag directly from element connection handles — LoneStar infers valid iStar 2.0 link types (auto-orienting `NeededBy`, detecting cross-boundary social `Dependency` links, and rejecting cycles or invalid pairings before creation).
 - **Bidirectional piStar 2.0 Interoperability (`.json` & `.txt`)**: Open and export both native LoneStar JSON and piStar 2.0 `.json` / `.txt` files (including piStar's JSON-in-`.txt` exports and structured iStar text notation) via native file dialogs or drag-and-drop onto the canvas.
-- **Publication-Grade Exports**: Render crisp High-DPI PNGs (`2x`, `3x`, `4x`, opaque or transparent background) using pure SVG `<text>`/`<tspan>` wrapping, plus standalone Vector SVG.
+- **Publication-Grade Exports**: Render crisp High-DPI PNGs (`2x`, `3x`, `4x`, opaque or transparent background) using pure SVG `<text>`/`<tspan>` wrapping, plus standalone **Vector SVG 1.1** (resolving CSS `var(--...)` and `rgba(...)` paints to native hex + opacity attributes and stripping editor hit-targets for Inkscape/Illustrator/LaTeX compatibility).
 - **Warm Non-Bluish Light & Dark Modes**: Carefully tuned **Alabaster Light** and **Obsidian Dark** palettes enforcing `R >= G >= B` across every surface background color (automatically verified in tests).
+- **In-App Local & Cloud AI Agent (Desktop Only)**: Built-in modeling co-pilot powered by OpenAI-compatible local runtimes (**LM Studio**, **Ollama**) or cloud APIs (**OpenAI**, **OpenRouter**, **Custom**) with automatic iStar 2.0 metamodel repair, self-correction, and single-snapshot Undo/Redo.
 - **Desktop Auto-Updater**: Built-in `tauri-plugin-updater` startup check and Settings modal displaying version metadata, download progress, OS-targeted release checks, and direct links to releases.
 
 ---
@@ -50,8 +53,8 @@ Both the Rust workspace (`crates/lonestar-core`, `src-tauri`) and the Svelte 5 T
 ```mermaid
 flowchart LR
   subgraph Frontend["Svelte 5 + TypeScript (src/)"]
-    UI["Presentation<br/>Toolbar, Canvas, Palette, Inspector, SettingsModal"]
-    AppStore["Application Stores<br/>modelStore, uiStore, updateStore ($state/$derived)"]
+    UI["Presentation<br/>Toolbar, Canvas, Palette, Inspector, AgentPanel, SettingsModal"]
+    AppStore["Application Stores<br/>modelStore, uiStore, updateStore, agentStore ($state/$derived)"]
     InfraJS["Infrastructure<br/>backendAdapter, pistarCodec, exportService"]
     DomJS["Domain<br/>types.ts, istarRules.ts"]
     UI --> AppStore --> DomJS
@@ -59,12 +62,12 @@ flowchart LR
   end
 
   subgraph Desktop["Tauri v2 Host (src-tauri/)"]
-    IPC["IPC Commands & Plugins<br/>dialog, updater, process, opener"]
+    IPC["IPC Commands & Plugins<br/>commands, agent (reqwest), dialog, updater, process, opener"]
   end
 
   subgraph Core["Rust Core Crate (crates/lonestar-core/)"]
     InfraRS["Infrastructure<br/>PiStarJsonAdapter (.json/.txt), JsonFileRepository, templates"]
-    AppRS["Application<br/>ModelService, ModelRepository, PiStarInteropPort"]
+    AppRS["Application<br/>ModelService, agent (batch ops + auto-repair), ports"]
     DomRS["Domain<br/>DiagramModel, Actor, Link, Dependency, validator.rs"]
     InfraRS --> AppRS --> DomRS
   end
@@ -79,17 +82,17 @@ flowchart LR
 lonestar/
 ├── crates/lonestar-core/       # Pure Rust Clean Architecture domain, validation & interop crate
 │   ├── src/domain/             # Entities, metamodel error types & formal validator (DFS cycles, constraints)
-│   ├── src/application/        # ModelService (CRUD, auto-layout, stats) & outbound ports
+│   ├── src/application/        # ModelService (CRUD, auto-layout, stats), AI batch engine (agent.rs) & ports
 │   ├── src/infrastructure/     # PiStarJsonAdapter (.json / .txt), file repository, built-in templates
-│   └── tests/                  # Rust integration test suite
-├── src-tauri/                  # Tauri v2 desktop binary, capabilities, updater config & icons
+│   └── tests/                  # Rust integration & AI agent repair test suite
+├── src-tauri/                  # Tauri v2 desktop binary, AI HTTP orchestrator (src/agent.rs), updater config & icons
 ├── src/                        # Svelte 5 Runes + TypeScript frontend
 │   ├── domain/                 # Client-side types, real-time rule checks & Smart Auto-Connect
-│   ├── application/            # Reactive $state/$derived stores (Model, UI, Auto-Updater)
+│   ├── application/            # Reactive $state/$derived stores (Model, UI, Auto-Updater, AI Agent)
 │   ├── infrastructure/         # Tauri/Web adapter, piStar .json/.txt codec, PNG/SVG exporter
-│   └── presentation/           # Canvas, Toolbar, Palette, Inspector, DependencyModal, SettingsModal
+│   └── presentation/           # Canvas, Toolbar, Palette, Inspector, AgentPanel, DependencyModal, SettingsModal
 ├── docs/                       # GitHub Pages website & compiled Web Studio (docs/demo/)
-├── tests/                      # Vitest test suite (rules, interop, export bounds, CSS R>=G>=B check)
+├── tests/                      # Vitest test suite (rules, interop, export bounds, SVG, AI store, CSS R>=G>=B)
 └── .github/workflows/          # CI tests (Linux/macOS/Windows), GitHub Releases & GitHub Pages
 ```
 
@@ -117,6 +120,25 @@ lonestar/
 | `Ctrl/Cmd + Z` / `Y` | Undo / Redo (up to 60 steps) |
 | `Delete` / `Backspace` | Delete selected Actor, Element, Link, or Dependency |
 | `Double-click` | Inline rename any Actor, Element, or Dependum |
+
+---
+
+## In-App Local & Cloud AI Agent (Desktop Only)
+
+In the native Tauri v2 desktop app (strictly guarded by `isTauriRuntime()` so the Web Studio remains static and zero-backend), LoneStar provides an embedded **AI Modeling Co-Pilot** accessible via the **✦ AI Agent** panel and configured in **Settings**:
+
+- **Supported Provider Presets** ([`agentStore.svelte.ts`](./src/application/agentStore.svelte.ts)):
+  - **LM Studio (Local)**: `http://localhost:1234/v1` (default model: `google/gemma-4-e4b`)
+  - **Ollama (Local)**: `http://localhost:11434/v1` (default model: `gemma4:e4b`)
+  - **OpenAI (Cloud)**: `https://api.openai.com/v1` (default model: `gpt-4o`)
+  - **OpenRouter (Cloud)**: `https://openrouter.ai/api/v1` (default model: `google/gemini-2.5-pro`)
+  - **Custom**: Any OpenAI-compatible `/v1/chat/completions` & `/v1/models` endpoint
+- **Declarative Batch Engine & Auto-Repair** ([`crates/lonestar-core/src/application/agent.rs`](./crates/lonestar-core/src/application/agent.rs)):
+  - Resolves actors and elements by ID or case-insensitive name, applies batched graph mutations, and runs `ModelService::auto_layout`.
+  - Automatically repairs common small-LLM iStar 2.0 mistakes (e.g., flipping reversed `NeededBy`, `Qualification`, and `Contribution` links, converting invalid `Agent` `IsA` links into `ParticipatesIn`, and promoting cross-boundary SR links into social `Dependency` links).
+- **Resilient Orchestration & Undo/Redo** ([`src-tauri/src/agent.rs`](./src-tauri/src/agent.rs)):
+  - Uses the OpenAI `apply_istar_operations` tool schema with automatic HTTP `400`/`422` non-tool fallback to fenced ` ```istar-ops ` / ` ```json ` blocks for local Jinja templates.
+  - Runs up to **2 self-correction rounds** if any operation fails schema or metamodel validation, and commits the resulting diagram to `modelStore` as a single atomic Undo/Redo snapshot.
 
 ---
 
@@ -158,8 +180,9 @@ npm run build
 ## CI/CD & Auto-Updater Releases
 
 - **Continuous Integration ([`.github/workflows/ci.yml`](./.github/workflows/ci.yml))**: Runs `tsc`, `vitest`, `vite build`, `cargo test --workspace`, and `cargo clippy -- -D warnings` on `ubuntu-22.04`, `macos-latest`, and `windows-latest`.
-- **Cross-Platform Releases ([`.github/workflows/release.yml`](./.github/workflows/release.yml))**: Triggered on tags matching `v*`. Builds signed installers (`.AppImage`, `.deb`, `.dmg` for `aarch64`/`x86_64`, `.msi`, `.nsis`) and publishes the `latest.json` updater manifest consumed by `tauri-plugin-updater`.
-  - To enable signed auto-updates in GitHub Actions, set `TAURI_SIGNING_PRIVATE_KEY` (and optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) under **Settings → Secrets and variables → Actions** matching the public key configured in [`src-tauri/tauri.conf.json`](./src-tauri/tauri.conf.json).
+- **Cross-Platform Releases ([`.github/workflows/release.yml`](./.github/workflows/release.yml))**: Triggered on tags matching `v*` (or `workflow_dispatch`). Automatically syncs the `v*` tag version into `package.json`, `src-tauri/tauri.conf.json`, `Cargo.toml`, and `src-tauri/Cargo.toml`, builds cross-platform bundles (`.AppImage`, `.deb`, `.dmg` + `.app.tar.gz` for `aarch64`/`x86_64`, `.msi`, `.nsis`), and publishes `latest.json` for `tauri-plugin-updater`.
+  - To enable signed auto-updates in GitHub Actions, set `TAURI_SIGNING_PRIVATE_KEY` (and optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`) under **Settings → Secrets and variables → Actions** matching `plugins.updater.pubkey` in [`src-tauri/tauri.conf.json`](./src-tauri/tauri.conf.json).
+  - If `TAURI_SIGNING_PRIVATE_KEY` is absent or empty (e.g., on community forks), the workflow automatically disables `bundle.createUpdaterArtifacts` and `includeUpdaterJson` so standard installer builds still succeed.
 - **GitHub Pages ([`.github/workflows/pages.yml`](./.github/workflows/pages.yml))**: Publishes [`docs/`](./docs) along with the compiled Web Studio in `docs/demo/` automatically on every push to `main`.
 
 ---

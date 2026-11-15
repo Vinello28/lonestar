@@ -61,6 +61,7 @@
 - [x] Add `"app"` to `bundle.targets` in `src-tauri/tauri.conf.json` so macOS also produces signed updater artifacts (`.app.tar.gz`)
 - [x] Make `.github/workflows/release.yml` resilient when `TAURI_SIGNING_PRIVATE_KEY` is absent/empty by disabling `bundle.createUpdaterArtifacts` and setting `includeUpdaterJson` dynamically
 - [x] Verify `gh secret list`, `npm run check`, `npm test`, `npm run build`, and `cargo test --workspace`
+- [x] Update `README.md` (Desktop AI Agent, SVG 1.1 export details, updated Clean Architecture diagram & repo structure, release version sync & updater signing fallback) and verify `npm test`
 
 ---
 
