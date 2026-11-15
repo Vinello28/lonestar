@@ -28,7 +28,7 @@
   "bundle": {
     "active": true,
     "createUpdaterArtifacts": true,
-    "targets": ["deb", "appimage", "dmg", "msi", "nsis"],
+    "targets": ["deb", "appimage", "dmg", "app", "msi", "nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -42,7 +42,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdBRjExMkU5MTYyRDEyRDYKUldUV0VpMFc2Ukx4ZWxhNUk3SEFaZE5xVSsxOWZsMUdVOXdVMndSVFRRWWp6ZG1rUGpFcmRuQ3UK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI4RjQ5RDZDRkNBOEZBNjMKUldSaitxajhiSjMwS1BkaDFHYm0zaE5XR2FUMzBPYjZQTTErTGZ1NS9LSHErSFRpUFA0T2VIVnQK",
       "endpoints": [
         "https://github.com/Vinello28/lonestar/releases/latest/download/latest.json"
       ],

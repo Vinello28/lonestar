@@ -55,31 +55,53 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Sync version from Git tag
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Prepare release version and updater signing config
+        id: prepare_release
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
           node -e '
             const fs = require("fs");
-            const version = process.env.GITHUB_REF_NAME.replace(/^v/i, "");
-            if (!version) process.exit(0);
-            for (const file of ["package.json", "src-tauri/tauri.conf.json"]) {
-              const json = JSON.parse(fs.readFileSync(file, "utf8"));
-              json.version = version;
-              fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
+            const ref = process.env.GITHUB_REF || "";
+            const refName = process.env.GITHUB_REF_NAME || "";
+            if (ref.startsWith("refs/tags/v")) {
+              const version = refName.replace(/^v/i, "");
+              if (version) {
+                for (const file of ["package.json", "src-tauri/tauri.conf.json"]) {
+                  const json = JSON.parse(fs.readFileSync(file, "utf8"));
+                  json.version = version;
+                  fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
+                }
+                const cargo = fs.readFileSync("Cargo.toml", "utf8").replace(
+                  /^(\[workspace\.package\][\s\S]*?^\s*version\s*=\s*")[^"]*(")/m,
+                  `$1${version}$2`
+                );
+                fs.writeFileSync("Cargo.toml", cargo);
+                const tauriCargo = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+                if (/^version\s*=\s*"/m.test(tauriCargo)) {
+                  fs.writeFileSync(
+                    "src-tauri/Cargo.toml",
+                    tauriCargo.replace(/^(version\s*=\s*")[^"]*(")/m, `$1${version}$2`)
+                  );
+                }
+                console.log(`Synced project version to ${version}`);
+              }
             }
-            const cargo = fs.readFileSync("Cargo.toml", "utf8").replace(
-              /^(\[workspace\.package\][\s\S]*?^\s*version\s*=\s*")[^"]*(")/m,
-              `$1${version}$2`
-            );
-            fs.writeFileSync("Cargo.toml", cargo);
-            const tauriCargo = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
-            if (/^version\s*=\s*"/m.test(tauriCargo)) {
-              fs.writeFileSync(
-                "src-tauri/Cargo.toml",
-                tauriCargo.replace(/^(version\s*=\s*")[^"]*(")/m, `$1${version}$2`)
-              );
+            const hasSigningKey = Boolean((process.env.TAURI_SIGNING_PRIVATE_KEY || "").trim());
+            if (!hasSigningKey) {
+              const tauriConfPath = "src-tauri/tauri.conf.json";
+              const tauriConf = JSON.parse(fs.readFileSync(tauriConfPath, "utf8"));
+              if (tauriConf.bundle) {
+                tauriConf.bundle.createUpdaterArtifacts = false;
+              }
+              fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 2) + "\n");
+              console.log("TAURI_SIGNING_PRIVATE_KEY not set: disabled bundle.createUpdaterArtifacts for this build.");
+            } else {
+              console.log("TAURI_SIGNING_PRIVATE_KEY detected: updater signing enabled.");
             }
-            console.log(`Synced project version to ${version}`);
+            if (process.env.GITHUB_OUTPUT) {
+              fs.appendFileSync(process.env.GITHUB_OUTPUT, `has_signing_key=${hasSigningKey}\n`);
+            }
           '
 
       - name: Build and publish Tauri release artifacts
@@ -94,5 +116,5 @@ jobs:
           releaseBody: 'Cross-platform release of LoneStar — Native iStar 2.0 (i*) Modeling Studio built with Rust (Tauri v2) & Svelte 5.'
           releaseDraft: false
           prerelease: false
-          includeUpdaterJson: true
+          includeUpdaterJson: ${{ steps.prepare_release.outputs.has_signing_key == 'true' }}
           args: ${{ matrix.args }}

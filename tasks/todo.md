@@ -56,6 +56,12 @@
 - [x] Document Desktop-only Local & Cloud AI Agent in `docs/index.html`
 - [x] Add Vitest unit tests and verify `npm run check`, `npm test`, `npm run build`, `cargo test --workspace`, and Inkscape SVG rendering
 
+## Phase 9: Release Pipeline Updater Signing Fix
+- [x] Generate Tauri updater minisign keypair, store `TAURI_SIGNING_PRIVATE_KEY` in GitHub Actions repository secrets, and update `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`
+- [x] Add `"app"` to `bundle.targets` in `src-tauri/tauri.conf.json` so macOS also produces signed updater artifacts (`.app.tar.gz`)
+- [x] Make `.github/workflows/release.yml` resilient when `TAURI_SIGNING_PRIVATE_KEY` is absent/empty by disabling `bundle.createUpdaterArtifacts` and setting `includeUpdaterJson` dynamically
+- [x] Verify `gh secret list`, `npm run check`, `npm test`, `npm run build`, and `cargo test --workspace`
+
 ---
 
 ## Final Engineering Review
