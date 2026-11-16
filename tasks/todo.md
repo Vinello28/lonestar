@@ -63,6 +63,23 @@
 - [x] Verify `gh secret list`, `npm run check`, `npm test`, `npm run build`, and `cargo test --workspace`
 - [x] Update `README.md` (Desktop AI Agent, SVG 1.1 export details, updated Clean Architecture diagram & repo structure, release version sync & updater signing fallback) and verify `npm test`
 
+## Phase 10: macOS Ad-Hoc Bundle Signing Fix
+- [x] Set `bundle.macOS.signingIdentity` to `"-"` in `src-tauri/tauri.conf.json` so `tauri build` seals `Info.plist` and `Resources` into `Contents/_CodeSignature`
+- [x] Document `bundle.macOS.signingIdentity: "-"` in `README.md` and capture Lesson #5 in `tasks/lessons.md`
+- [x] Verify `codesign --verify --deep --strict` on the rebuilt `LoneStar.app` vs `v1.6.2` and assert `signingIdentity` in `tests/lonestar.test.ts`
+- [x] Run verification suite (`npm run check`, `npm test`, `npm run build`, `cargo test --workspace`)
+
+## Phase 11: Enlarge Theme, AI Agent & Settings Icons
+- [x] Enlarge theme (`☾`/`☀`), AI Agent (`✦`), and Settings (`⚙`) icon spans in `src/presentation/Toolbar.svelte`
+- [x] Enlarge AI Agent (`✦`) and Settings (`⚙`) icons in `src/presentation/AgentPanel.svelte`
+- [x] Enlarge theme switch (`☾`/`☀`) icon in `src/presentation/SettingsModal.svelte`
+- [x] Add Vitest check in `tests/lonestar.test.ts` and verify `npm run check`, `npm test`, `npm run build`
+
+## Phase 12: Replace Unicode AI Agent & Settings Icons with Symmetric Centered SVGs
+- [x] Replace Unicode `✦` and `⚙` in `src/presentation/Toolbar.svelte` with centered 18×18 Gemma faceted-star and gear SVGs (`tb-icon-svg`) + `text-box: trim-both cap alphabetic` label alignment
+- [x] Replace Unicode `✦` and `⚙` in `src/presentation/AgentPanel.svelte` with centered 16×16 Gemma faceted-star and gear SVGs (`agent-icon-svg`)
+- [x] Update Vitest assertions in `tests/lonestar.test.ts`, verify `npm run check`, `npm test`, `npm run build`, and rebuild macOS desktop bundle (`target/release/bundle/macos/LoneStar.app`)
+
 ---
 
 ## Final Engineering Review

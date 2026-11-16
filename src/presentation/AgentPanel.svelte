@@ -73,7 +73,23 @@
 <aside class="agent-panel" aria-label="AI Modeling Agent">
   <div class="agent-header">
     <div class="agent-title-wrap">
-      <span class="agent-title">✦ AI Agent</span>
+      <span class="agent-title">
+        <span class="agent-title-icon" aria-hidden="true">
+          <svg
+            class="agent-icon-svg"
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="currentColor"
+            fill-rule="evenodd"
+          >
+            <path
+              d="M12 1.5C13.35 7.35 16.65 10.65 22.5 12C16.65 13.35 13.35 16.65 12 22.5C10.65 16.65 7.35 13.35 1.5 12C7.35 10.65 10.65 7.35 12 1.5ZM12 8.2C12.55 10.4 13.6 11.45 15.8 12C13.6 12.55 12.55 13.6 12 15.8C11.45 13.6 10.4 12.55 8.2 12C10.4 11.45 11.45 10.4 12 8.2Z"
+            />
+          </svg>
+        </span>
+        <span>AI Agent</span>
+      </span>
       <button
         type="button"
         class="model-pill"
@@ -96,12 +112,28 @@
       </button>
       <button
         type="button"
-        class="mini-btn"
+        class="mini-btn icon-mini-btn"
         onclick={() => (uiStore.settingsModalOpen = true)}
         title="Open AI Provider Settings"
         aria-label="Open AI Settings"
       >
-        ⚙
+        <svg
+          class="agent-icon-svg"
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path
+            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+          />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
       </button>
       {#if agentStore.messages.length > 0}
         <button
@@ -382,9 +414,29 @@
   }
 
   .agent-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-weight: 800;
     font-size: 12.5px;
     color: var(--accent-primary);
+  }
+
+  .agent-title-icon {
+    width: 16px;
+    height: 16px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .agent-icon-svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+    flex-shrink: 0;
   }
 
   .model-pill {
@@ -428,6 +480,16 @@
     background: var(--bg-elevated);
     font-size: 11px;
     font-weight: 600;
+  }
+
+  .icon-mini-btn {
+    width: 26px;
+    padding: 0;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
   }
 
   .mini-btn:hover {

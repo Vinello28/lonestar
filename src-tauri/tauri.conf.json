@@ -38,7 +38,10 @@
     ],
     "category": "DeveloperTool",
     "shortDescription": "Cross-platform iStar 2.0 (i*) goal-oriented modeling studio",
-    "longDescription": "LoneStar is a fast, native cross-platform modeling application for iStar 2.0 (i*) built with Rust and Svelte 5 following Clean Architecture."
+    "longDescription": "LoneStar is a fast, native cross-platform modeling application for iStar 2.0 (i*) built with Rust and Svelte 5 following Clean Architecture.",
+    "macOS": {
+      "signingIdentity": "-"
+    }
   },
   "plugins": {
     "updater": {

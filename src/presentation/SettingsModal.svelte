@@ -150,12 +150,17 @@
           </span>
           <button
             type="button"
-            class="btn"
+            class="btn theme-switch-btn"
             onclick={() => uiStore.toggleTheme()}
           >
-            {uiStore.theme === 'light'
-              ? '☾ Switch to Dark'
-              : '☀ Switch to Light'}
+            <span class="theme-switch-icon" aria-hidden="true">
+              {uiStore.theme === 'light' ? '☾' : '☀'}
+            </span>
+            <span>
+              {uiStore.theme === 'light'
+                ? 'Switch to Dark'
+                : 'Switch to Light'}
+            </span>
           </button>
         </div>
       </section>
@@ -537,6 +542,20 @@
   .theme-desc {
     font-size: 12.5px;
     color: var(--text-secondary);
+  }
+
+  .theme-switch-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .theme-switch-icon {
+    font-size: 18px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .links-grid {

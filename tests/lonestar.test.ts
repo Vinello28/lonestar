@@ -377,3 +377,45 @@ describe('AI Agent defaults & Web Studio isolation', () => {
     expect(agentStore.config.baseUrl).toBe('http://localhost:1234/v1');
   });
 });
+
+describe('macOS bundle signing', () => {
+  it('configures ad-hoc signingIdentity in tauri.conf.json so Info.plist and resources are sealed', () => {
+    const tauriConf = JSON.parse(
+      readFileSync(
+        resolve(process.cwd(), 'src-tauri/tauri.conf.json'),
+        'utf8',
+      ),
+    ) as {
+      bundle?: { macOS?: { signingIdentity?: string } };
+    };
+
+    expect(tauriConf.bundle?.macOS?.signingIdentity).toBe('-');
+  });
+});
+
+describe('Toolbar, AgentPanel & SettingsModal icon sizing', () => {
+  it('uses symmetric centered SVG icons for AI Agent (Gemma star) and Settings (gear) alongside theme toggle', () => {
+    const toolbar = readFileSync(
+      resolve(process.cwd(), 'src/presentation/Toolbar.svelte'),
+      'utf8',
+    );
+    const agentPanel = readFileSync(
+      resolve(process.cwd(), 'src/presentation/AgentPanel.svelte'),
+      'utf8',
+    );
+    const settingsModal = readFileSync(
+      resolve(process.cwd(), 'src/presentation/SettingsModal.svelte'),
+      'utf8',
+    );
+
+    expect(toolbar).toContain('class="tb-action-icon"');
+    expect(toolbar).toContain('class="tb-icon-svg"');
+    expect(toolbar).toContain('font-size: 18px');
+    expect(toolbar).not.toContain('>✦<');
+    expect(toolbar).not.toContain('>⚙<');
+    expect(agentPanel).toContain('class="agent-title-icon"');
+    expect(agentPanel).toContain('class="mini-btn icon-mini-btn"');
+    expect(agentPanel).toContain('class="agent-icon-svg"');
+    expect(settingsModal).toContain('class="theme-switch-icon"');
+  });
+});
