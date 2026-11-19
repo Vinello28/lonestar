@@ -1,5 +1,10 @@
 <script lang="ts">
   import { modelStore } from '../application/modelStore.svelte';
+  import {
+    isFileNotFoundError,
+    recentProjectsStore,
+    type RecentProjectEntry,
+  } from '../application/recentProjectsStore.svelte';
   import { uiStore } from '../application/uiStore.svelte';
   import { updateStore } from '../application/updateStore.svelte';
   import { backendAdapter, isTauriRuntime } from '../infrastructure/backendAdapter';
@@ -28,21 +33,25 @@
   let templateMenuOpen = $state(false);
   let selectedTemplate = $state('');
   let templateDropdownRef: HTMLDivElement | null = $state(null);
+  let recentMenuOpen = $state(false);
+  let recentDropdownRef: HTMLDivElement | null = $state(null);
 
   const selectedTemplateLabel = $derived(
     TEMPLATE_OPTIONS.find((opt) => opt.value === selectedTemplate)?.label ?? 'Choose Template…'
   );
 
-  $effect(() => {
-    if (!templateMenuOpen) return;
+  function setupDropdownDismiss(
+    ref: HTMLElement | null,
+    close: () => void,
+  ): () => void {
     const onPointerDown = (e: PointerEvent) => {
-      if (templateDropdownRef && !templateDropdownRef.contains(e.target as Node)) {
-        templateMenuOpen = false;
+      if (ref && !ref.contains(e.target as Node)) {
+        close();
       }
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        templateMenuOpen = false;
+        close();
       }
     };
     window.addEventListener('pointerdown', onPointerDown);
@@ -51,6 +60,20 @@
       window.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('keydown', onKeyDown);
     };
+  }
+
+  $effect(() => {
+    if (!templateMenuOpen) return;
+    return setupDropdownDismiss(templateDropdownRef, () => {
+      templateMenuOpen = false;
+    });
+  });
+
+  $effect(() => {
+    if (!recentMenuOpen) return;
+    return setupDropdownDismiss(recentDropdownRef, () => {
+      recentMenuOpen = false;
+    });
   });
 
   async function selectTemplate(val: string) {
@@ -65,11 +88,12 @@
   async function handleOpenJson() {
     if (isTauriRuntime()) {
       try {
-        const raw = await backendAdapter.openJsonFileFromDialog();
-        if (!raw) return;
-        const loaded = await backendAdapter.importJsonModel(raw);
+        const picked = await backendAdapter.openJsonFileWithPathFromDialog();
+        if (!picked) return;
+        const loaded = await backendAdapter.importJsonModel(picked.contents);
         modelStore.replaceModel(loaded);
         uiStore.selection = null;
+        recentProjectsStore.recordProject(picked.path, loaded.name);
         setTimeout(onFitToScreen, 20);
         uiStore.notify(`Loaded "${loaded.name}"`, 'success');
       } catch (err) {
@@ -77,6 +101,32 @@
       }
     } else {
       fileInputRef?.click();
+    }
+  }
+
+  async function handleOpenRecentProject(entry: RecentProjectEntry) {
+    recentMenuOpen = false;
+    try {
+      const raw = await backendAdapter.readJsonFileFromPath(entry.path);
+      const loaded = await backendAdapter.importJsonModel(raw);
+      modelStore.replaceModel(loaded);
+      uiStore.selection = null;
+      recentProjectsStore.recordProject(entry.path, loaded.name);
+      setTimeout(onFitToScreen, 20);
+      uiStore.notify(`Loaded "${loaded.name}"`, 'success');
+    } catch (err) {
+      if (isFileNotFoundError(err)) {
+        recentProjectsStore.removeProject(entry.path);
+        uiStore.notify(
+          `File not found: "${entry.fileName}" — removed from recent projects.`,
+          'error',
+        );
+      } else {
+        uiStore.notify(
+          `Open failed for "${entry.fileName}": ${String(err)}`,
+          'error',
+        );
+      }
     }
   }
 
@@ -146,46 +196,63 @@
     if (saved) uiStore.notify('Exported Vector SVG', 'success');
   }
 
+  async function saveModelDocument(
+    filename: string,
+    filterName: string,
+    extensions: string[],
+    contents: string,
+    successMessage: string,
+  ) {
+    const savedPath = await backendAdapter.saveFile(
+      filename,
+      filterName,
+      extensions,
+      contents,
+      false,
+    );
+    uiStore.exportMenuOpen = false;
+    if (savedPath) {
+      if (isTauriRuntime()) {
+        recentProjectsStore.recordProject(savedPath, modelStore.model.name);
+      }
+      uiStore.notify(successMessage, 'success');
+    }
+  }
+
   async function handleExportLoneStarJson() {
     const json = exportModelToLoneStarJson(modelStore.model);
     const filename = `${sanitizeFilename(modelStore.model.name)}.lonestar.json`;
-    const saved = await backendAdapter.saveFile(
+    await saveModelDocument(
       filename,
       'LoneStar JSON',
       ['json'],
       json,
-      false,
+      'Saved LoneStar JSON',
     );
-    uiStore.exportMenuOpen = false;
-    if (saved) uiStore.notify('Saved LoneStar JSON', 'success');
   }
 
   async function handleExportPiStarJson() {
     const json = await backendAdapter.exportPiStarJson(modelStore.model);
     const filename = `${sanitizeFilename(modelStore.model.name)}.pistar.json`;
-    const saved = await backendAdapter.saveFile(
+    await saveModelDocument(
       filename,
       'piStar 2.0 JSON',
       ['json'],
       json,
-      false,
+      'Exported piStar 2.0 JSON',
     );
-    uiStore.exportMenuOpen = false;
-    if (saved) uiStore.notify('Exported piStar 2.0 JSON', 'success');
   }
 
   async function handleExportPiStarTxt() {
     const txt = await backendAdapter.exportPiStarJson(modelStore.model);
     const filename = `${sanitizeFilename(modelStore.model.name)}.pistar.txt`;
-    const saved = await backendAdapter.saveFile(
+    await saveModelDocument(
       filename,
       'piStar 2.0 Text (.txt)',
       ['txt'],
       txt,
-      false,
+      'Exported piStar 2.0 (.txt)',
     );
-    uiStore.exportMenuOpen = false;
-    if (saved) uiStore.notify('Exported piStar 2.0 (.txt)', 'success');
   }
 
   async function handleAutoLayout() {
@@ -263,6 +330,80 @@
         style="display: none;"
         onchange={handleBrowserFileChange}
       />
+
+      {#if isTauriRuntime()}
+        <div class="recent-dropdown" bind:this={recentDropdownRef}>
+          <button
+            type="button"
+            class="tb-btn hero-control recent-trigger"
+            aria-label="Recent Projects"
+            aria-haspopup="menu"
+            aria-expanded={recentMenuOpen}
+            onclick={() => (recentMenuOpen = !recentMenuOpen)}
+            title="Open recently saved or opened diagrams (Offline)"
+          >
+            <span>Recent</span>
+            {#if recentProjectsStore.entries.length > 0}
+              <span class="recent-count">{recentProjectsStore.entries.length}</span>
+            {/if}
+            <span class="template-caret" aria-hidden="true">▾</span>
+          </button>
+
+          {#if recentMenuOpen}
+            <div class="dropdown-menu recent-menu" role="menu">
+              <div class="recent-menu-header">
+                <span class="dropdown-section">
+                  Recent Projects ({recentProjectsStore.entries.length}/10)
+                </span>
+                {#if recentProjectsStore.entries.length > 0}
+                  <button
+                    type="button"
+                    class="recent-clear-btn"
+                    onclick={() => recentProjectsStore.clearAll()}
+                    title="Clear recent projects list"
+                  >
+                    Clear
+                  </button>
+                {/if}
+              </div>
+
+              {#if recentProjectsStore.entries.length === 0}
+                <div class="recent-empty">
+                  No recent diagrams yet. Save or open a .json / .txt diagram to list it here.
+                </div>
+              {:else}
+                <div class="recent-list">
+                  {#each recentProjectsStore.entries as entry (entry.path)}
+                    <div class="recent-item-row">
+                      <button
+                        type="button"
+                        class="menu-action recent-item-btn"
+                        role="menuitem"
+                        title={entry.path}
+                        onclick={() => handleOpenRecentProject(entry)}
+                      >
+                        <span class="recent-item-name">{entry.name}</span>
+                        <span class="recent-item-meta">
+                          {entry.fileName} — {entry.path}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        class="recent-remove-btn"
+                        aria-label={`Remove ${entry.fileName} from recent projects`}
+                        title="Remove from recent projects"
+                        onclick={() => recentProjectsStore.removeProject(entry.path)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
   </div>
 
@@ -775,5 +916,128 @@
   .template-check {
     font-size: 12px;
     font-weight: 700;
+  }
+
+  .recent-dropdown {
+    position: relative;
+  }
+
+  .recent-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--text-primary);
+  }
+
+  .recent-count {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-primary);
+    font-size: 11px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dropdown-menu.recent-menu {
+    left: 0;
+    right: auto;
+    top: 48px;
+    width: 340px;
+    max-width: calc(100vw - 32px);
+  }
+
+  .recent-menu-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .recent-clear-btn {
+    border: none;
+    background: transparent;
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .recent-clear-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .recent-empty {
+    padding: 12px 8px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+
+  .recent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 340px;
+    overflow-y: auto;
+  }
+
+  .recent-item-row {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+  }
+
+  .recent-item-btn {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    color: var(--text-primary);
+  }
+
+  .recent-item-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 700;
+  }
+
+  .recent-item-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .recent-remove-btn {
+    flex-shrink: 0;
+    width: 26px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .recent-remove-btn:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-hover);
+    color: var(--status-error);
   }
 </style>

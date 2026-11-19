@@ -86,7 +86,17 @@ pub fn save_file_to_disk(path: String, contents: String, is_base64: bool) -> Res
 
 #[tauri::command]
 pub fn read_file_from_disk(path: String) -> Result<String, String> {
-    fs::read_to_string(Path::new(&path)).map_err(|e| format!("Failed to read file: {e}"))
+    let target = Path::new(&path);
+    if !target.exists() {
+        return Err(format!("FILE_NOT_FOUND: File not found at path: {path}"));
+    }
+    fs::read_to_string(target).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            format!("FILE_NOT_FOUND: File not found at path: {path}")
+        } else {
+            format!("Failed to read file: {e}")
+        }
+    })
 }
 
 #[tauri::command]
@@ -141,5 +151,45 @@ fn b64_val(byte: u8) -> Result<u8, String> {
         b'+' => Ok(62),
         b'/' => Ok(63),
         other => Err(format!("Unexpected base64 character: {other}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_file_from_disk;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn read_file_from_disk_returns_file_not_found_for_missing_path() {
+        let missing = std::env::temp_dir().join("lonestar_definitely_missing_diagram_12345.json");
+        let _ = fs::remove_file(&missing);
+        let res = read_file_from_disk(missing.to_string_lossy().into_owned());
+        assert!(res.is_err());
+        let err = res.expect_err("expected missing file error");
+        assert!(
+            err.starts_with("FILE_NOT_FOUND:"),
+            "expected FILE_NOT_FOUND prefix, got: {err}"
+        );
+    }
+
+    #[test]
+    fn read_file_from_disk_reads_existing_file() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let temp_path = std::env::temp_dir().join(format!(
+            "lonestar_test_read_{}_{}.json",
+            std::process::id(),
+            nonce
+        ));
+        let expected = "{\"name\":\"Recent Test\"}";
+        fs::write(&temp_path, expected).expect("write temp test file");
+
+        let result = read_file_from_disk(temp_path.to_string_lossy().into_owned());
+        let _ = fs::remove_file(&temp_path);
+
+        assert_eq!(result.expect("read existing temp file"), expected);
     }
 }

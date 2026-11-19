@@ -130,20 +130,20 @@ export const backendAdapter = {
     extensions: string[],
     contents: string,
     isBase64: boolean,
-  ): Promise<boolean> {
+  ): Promise<string | null> {
     if (isTauriRuntime()) {
       const { save } = await import('@tauri-apps/plugin-dialog');
       const selectedPath = await save({
         defaultPath: defaultFilename,
         filters: [{ name: filterName, extensions }],
       });
-      if (!selectedPath) return false;
+      if (!selectedPath) return null;
       await tauriInvoke<void>('save_file_to_disk', {
         path: selectedPath,
         contents,
         isBase64,
       });
-      return true;
+      return selectedPath;
     }
 
     if (isBase64) {
@@ -161,10 +161,10 @@ export const backendAdapter = {
       const blob = new Blob([contents], { type: mime });
       triggerBrowserDownload(defaultFilename, blob);
     }
-    return true;
+    return defaultFilename;
   },
 
-  async openJsonFileFromDialog(): Promise<string | null> {
+  async openJsonFileWithPathFromDialog(): Promise<{ path: string; contents: string } | null> {
     if (!isTauriRuntime()) return null;
     const { open } = await import('@tauri-apps/plugin-dialog');
     const selected = await open({
@@ -172,7 +172,20 @@ export const backendAdapter = {
       filters: [{ name: 'i* 2.0 Model (.json, .txt)', extensions: ['json', 'txt', 'istar'] }],
     });
     if (!selected || typeof selected !== 'string') return null;
-    return tauriInvoke<string>('read_file_from_disk', { path: selected });
+    const contents = await tauriInvoke<string>('read_file_from_disk', { path: selected });
+    return { path: selected, contents };
+  },
+
+  async openJsonFileFromDialog(): Promise<string | null> {
+    const res = await this.openJsonFileWithPathFromDialog();
+    return res?.contents ?? null;
+  },
+
+  async readJsonFileFromPath(path: string): Promise<string> {
+    if (!isTauriRuntime()) {
+      throw new Error('Direct file path loading is only available in the LoneStar Desktop app.');
+    }
+    return tauriInvoke<string>('read_file_from_disk', { path });
   },
 
   async agentListModels(baseUrl: string, apiKey?: string): Promise<string[]> {

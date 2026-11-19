@@ -24,6 +24,12 @@ import {
   agentStore,
   defaultAgentConfig,
 } from '../src/application/agentStore.svelte';
+import {
+  extractFileName,
+  isFileNotFoundError,
+  MAX_RECENT_PROJECTS,
+  recentProjectsStore,
+} from '../src/application/recentProjectsStore.svelte';
 import { isTauriRuntime } from '../src/infrastructure/backendAdapter';
 
 describe('iStar 2.0 client metamodel rules', () => {
@@ -417,5 +423,57 @@ describe('Toolbar, AgentPanel & SettingsModal icon sizing', () => {
     expect(agentPanel).toContain('class="mini-btn icon-mini-btn"');
     expect(agentPanel).toContain('class="agent-icon-svg"');
     expect(settingsModal).toContain('class="theme-switch-icon"');
+  });
+});
+
+describe('Offline Recent Projects store & missing file handling', () => {
+  it('tracks up to 10 deduplicated diagram paths, extracts filenames, and handles missing files', () => {
+    recentProjectsStore.clearAll();
+    expect(MAX_RECENT_PROJECTS).toBe(10);
+
+    expect(extractFileName('/home/user/diagrams/travel.lonestar.json')).toBe('travel.lonestar.json');
+    expect(extractFileName('C:\\Users\\Alice\\Models\\telemedicine.pistar.txt')).toBe(
+      'telemedicine.pistar.txt',
+    );
+
+    for (let i = 1; i <= 12; i++) {
+      recentProjectsStore.recordProject(`/tmp/diagrams/project-${i}.lonestar.json`, `Diagram ${i}`);
+    }
+
+    expect(recentProjectsStore.entries).toHaveLength(10);
+    expect(recentProjectsStore.entries[0].path).toBe('/tmp/diagrams/project-12.lonestar.json');
+    expect(recentProjectsStore.entries[9].path).toBe('/tmp/diagrams/project-3.lonestar.json');
+
+    // Recording an existing path promotes it to the top without duplicating
+    recentProjectsStore.recordProject('/tmp/diagrams/project-5.lonestar.json', 'Diagram 5 Updated');
+    expect(recentProjectsStore.entries).toHaveLength(10);
+    expect(recentProjectsStore.entries[0].path).toBe('/tmp/diagrams/project-5.lonestar.json');
+    expect(recentProjectsStore.entries[0].name).toBe('Diagram 5 Updated');
+
+    // Missing file error detection and removal
+    expect(isFileNotFoundError('FILE_NOT_FOUND: File not found at path: /tmp/missing.json')).toBe(true);
+    expect(isFileNotFoundError('Failed to read file: No such file or directory (os error 2)')).toBe(true);
+    expect(isFileNotFoundError('Invalid JSON syntax')).toBe(false);
+
+    recentProjectsStore.removeProject('/tmp/diagrams/project-5.lonestar.json');
+    expect(recentProjectsStore.entries).toHaveLength(9);
+    expect(
+      recentProjectsStore.entries.some((e) => e.path === '/tmp/diagrams/project-5.lonestar.json'),
+    ).toBe(false);
+
+    recentProjectsStore.clearAll();
+  });
+
+  it('guards the Recent Projects menu with isTauriRuntime() and removes missing entries on open failure', () => {
+    const toolbar = readFileSync(
+      resolve(process.cwd(), 'src/presentation/Toolbar.svelte'),
+      'utf8',
+    );
+
+    expect(toolbar).toContain('recent-dropdown');
+    expect(toolbar).toContain('handleOpenRecentProject');
+    expect(toolbar).toContain('isFileNotFoundError');
+    expect(toolbar).toContain('recentProjectsStore.removeProject');
+    expect(toolbar).toContain('isTauriRuntime()');
   });
 });

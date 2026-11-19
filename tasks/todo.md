@@ -80,6 +80,13 @@
 - [x] Replace Unicode `✦` and `⚙` in `src/presentation/AgentPanel.svelte` with centered 16×16 Gemma faceted-star and gear SVGs (`agent-icon-svg`)
 - [x] Update Vitest assertions in `tests/lonestar.test.ts`, verify `npm run check`, `npm test`, `npm run build`, and rebuild macOS desktop bundle (`target/release/bundle/macos/LoneStar.app`)
 
+## Phase 13: Offline Recent Projects Menu (Last 10 Diagrams)
+- [x] Enhance `read_file_from_disk` in `src-tauri/src/commands.rs` with explicit `FILE_NOT_FOUND` detection and add Rust unit tests
+- [x] Create `src/application/recentProjectsStore.svelte.ts` (capped at 10 recent diagram files, persisted to `localStorage`, deduplicated by path, with filename extraction and missing-file detection helpers)
+- [x] Update `src/infrastructure/backendAdapter.ts` to return saved/opened file paths and provide `readJsonFileFromPath` (Tauri Desktop only)
+- [x] Add offline-only (`isTauriRuntime()`) Recent Projects dropdown menu & missing-file cleanup handling to `src/presentation/Toolbar.svelte`
+- [x] Add Vitest unit tests in `tests/lonestar.test.ts` and verify `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `npm run check`, `npm test`, and `npm run build`
+
 ---
 
 ## Final Engineering Review
