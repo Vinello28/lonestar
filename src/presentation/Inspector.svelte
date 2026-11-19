@@ -38,6 +38,31 @@
       : null,
   );
 
+  let dependerActorElements = $derived(
+    selectedDep
+      ? modelStore.model.elements.filter(
+          (e) => e.actorId === selectedDep.dependerActorId,
+        )
+      : [],
+  );
+
+  let dependeeActorElements = $derived(
+    selectedDep
+      ? modelStore.model.elements.filter(
+          (e) => e.actorId === selectedDep.dependeeActorId,
+        )
+      : [],
+  );
+
+  let newPropKey = $state('');
+  let newPropVal = $state('');
+
+  $effect(() => {
+    void uiStore.selection;
+    newPropKey = '';
+    newPropVal = '';
+  });
+
   function resolveName(id: string): string {
     return (
       modelStore.model.actors.find((a) => a.id === id)?.name ??
@@ -49,6 +74,62 @@
   function changeLinkKind(linkId: string, nextKind: LinkKind) {
     const err = modelStore.updateLinkKind(linkId, nextKind);
     if (err) uiStore.notify(err, 'error');
+  }
+
+  function handleDepAnchorChange(
+    e: Event,
+    depId: string,
+    field: 'dependerElementId' | 'dependeeElementId',
+    previousValue: string | null,
+  ) {
+    const select = e.currentTarget as HTMLSelectElement;
+    const nextVal = select.value || null;
+    const err = modelStore.updateDependency(depId, { [field]: nextVal });
+    if (err) {
+      select.value = previousValue ?? '';
+      uiStore.notify(err, 'error');
+    }
+  }
+
+  function getActiveCustomProps(): Record<string, string> {
+    return (
+      selectedActor?.customProperties ??
+      selectedElement?.customProperties ??
+      selectedDep?.customProperties ??
+      {}
+    );
+  }
+
+  function updateActiveCustomProps(nextProps: Record<string, string>) {
+    if (selectedActor) {
+      modelStore.updateActor(selectedActor.id, { customProperties: nextProps });
+    } else if (selectedElement) {
+      modelStore.updateElement(selectedElement.id, {
+        customProperties: nextProps,
+      });
+    } else if (selectedDep) {
+      modelStore.updateDependency(selectedDep.id, {
+        customProperties: nextProps,
+      });
+    }
+  }
+
+  function addCustomProp() {
+    const key = newPropKey.trim();
+    if (!key) return;
+    updateActiveCustomProps({ ...getActiveCustomProps(), [key]: newPropVal });
+    newPropKey = '';
+    newPropVal = '';
+  }
+
+  function setCustomPropValue(key: string, val: string) {
+    updateActiveCustomProps({ ...getActiveCustomProps(), [key]: val });
+  }
+
+  function removeCustomProp(key: string) {
+    const next = { ...getActiveCustomProps() };
+    delete next[key];
+    updateActiveCustomProps(next);
   }
 
   function focusEntity(entityId: string | null) {
@@ -66,6 +147,75 @@
 </script>
 
 <aside class="inspector" aria-label="Properties and Validation Inspector">
+  {#snippet customPropsEditor(props: Record<string, string>)}
+    <div class="field">
+      <span>Custom Properties</span>
+      {#if Object.keys(props).length > 0}
+        <div class="props-list">
+          {#each Object.entries(props) as [propKey, propVal] (propKey)}
+            <div class="prop-row">
+              <span class="prop-key" title={propKey}>{propKey}</span>
+              <input
+                type="text"
+                class="prop-val-input"
+                aria-label={`Value for ${propKey}`}
+                value={propVal}
+                onchange={(e) =>
+                  setCustomPropValue(
+                    propKey,
+                    (e.target as HTMLInputElement).value,
+                  )}
+              />
+              <button
+                type="button"
+                class="prop-del-btn"
+                title={`Remove ${propKey}`}
+                aria-label={`Remove ${propKey}`}
+                onclick={() => removeCustomProp(propKey)}
+              >
+                ×
+              </button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+      <div class="prop-add-row">
+        <input
+          type="text"
+          placeholder="Key"
+          bind:value={newPropKey}
+          aria-label="New custom property key"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addCustomProp();
+            }
+          }}
+        />
+        <input
+          type="text"
+          placeholder="Value"
+          bind:value={newPropVal}
+          aria-label="New custom property value"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              addCustomProp();
+            }
+          }}
+        />
+        <button
+          type="button"
+          class="prop-add-btn"
+          disabled={!newPropKey.trim()}
+          onclick={addCustomProp}
+        >
+          Add
+        </button>
+      </div>
+    </div>
+  {/snippet}
+
   {#if selectedActor}
     <div class="panel-header">
       <span>Actor Properties</span>
@@ -118,6 +268,8 @@
           : 'Collapse to Strategic Dependency (SD)'}
       </button>
     </div>
+
+    {@render customPropsEditor(selectedActor.customProperties)}
 
     <button
       type="button"
@@ -181,6 +333,8 @@
         {/each}
       </select>
     </label>
+
+    {@render customPropsEditor(selectedElement.customProperties)}
 
     <button
       type="button"
@@ -328,6 +482,46 @@
       </div>
     </div>
 
+    <label class="field">
+      <span>Depender Element</span>
+      <select
+        value={selectedDep.dependerElementId ?? ''}
+        onchange={(e) =>
+          handleDepAnchorChange(
+            e,
+            selectedDep!.id,
+            'dependerElementId',
+            selectedDep!.dependerElementId,
+          )}
+      >
+        <option value="">(Actor Boundary)</option>
+        {#each dependerActorElements as el}
+          <option value={el.id}>{el.name} ({el.kind})</option>
+        {/each}
+      </select>
+    </label>
+
+    <label class="field">
+      <span>Dependee Element</span>
+      <select
+        value={selectedDep.dependeeElementId ?? ''}
+        onchange={(e) =>
+          handleDepAnchorChange(
+            e,
+            selectedDep!.id,
+            'dependeeElementId',
+            selectedDep!.dependeeElementId,
+          )}
+      >
+        <option value="">(Actor Boundary)</option>
+        {#each dependeeActorElements as el}
+          <option value={el.id}>{el.name} ({el.kind})</option>
+        {/each}
+      </select>
+    </label>
+
+    {@render customPropsEditor(selectedDep.customProperties)}
+
     <button
       type="button"
       class="danger-btn"
@@ -390,7 +584,8 @@
     <div class="section-mini-title">Shortcuts</div>
     <ul>
       <li><kbd>Double-Click</kbd> Rename shape inline</li>
-      <li><kbd>Click Pill</kbd> Cycle make/help/hurt/break or AND/OR</li>
+      <li><kbd>Click Pill</kbd> Cycle make/help/hurt/break</li>
+      <li><kbd>Double-Click Link</kbd> Toggle AND / OR refinement</li>
       <li><kbd>Del</kbd> Delete selected</li>
       <li><kbd>Ctrl+Z / Y</kbd> Undo / Redo</li>
       <li><kbd>F</kbd> Fit diagram to screen</li>
@@ -628,5 +823,85 @@
     color: var(--text-primary);
     font-size: 10px;
     margin-right: 4px;
+  }
+
+  .props-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .prop-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .prop-key {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .prop-val-input {
+    min-width: 0;
+    padding: 4px 6px !important;
+    font-size: 11.5px;
+  }
+
+  .prop-del-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .prop-del-btn:hover {
+    border-color: var(--status-error);
+    color: var(--status-error);
+  }
+
+  .prop-add-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: 5px;
+    align-items: center;
+  }
+
+  .prop-add-row input {
+    min-width: 0;
+    padding: 5px 7px;
+    font-size: 11.5px;
+  }
+
+  .prop-add-btn {
+    padding: 5px 9px;
+    border-radius: 7px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .prop-add-btn:hover:not(:disabled) {
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+  }
+
+  .prop-add-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 </style>

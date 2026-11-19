@@ -3,7 +3,12 @@
     AGENT_PRESET_DEFAULTS,
     agentStore,
   } from '../application/agentStore.svelte';
-  import { uiStore } from '../application/uiStore.svelte';
+  import {
+    isMacPlatform,
+    MAX_UI_ZOOM,
+    MIN_UI_ZOOM,
+    uiStore,
+  } from '../application/uiStore.svelte';
   import { updateStore } from '../application/updateStore.svelte';
   import {
     isTauriRuntime,
@@ -163,6 +168,45 @@
             </span>
           </button>
         </div>
+
+        {#if isTauriRuntime()}
+          <div class="theme-row ui-zoom-row">
+            <span class="theme-desc">
+              Interface scale ({isMacPlatform() ? '⌘+/⌘−/⌘0' : 'Ctrl+/Ctrl−/Ctrl+0'})
+            </span>
+            <div class="ui-zoom-controls">
+              <button
+                type="button"
+                class="btn"
+                disabled={uiStore.uiZoom <= MIN_UI_ZOOM}
+                onclick={() => void uiStore.zoomUiOut()}
+                aria-label="Zoom Out GUI"
+                title={isMacPlatform() ? 'Zoom Out GUI (⌘−)' : 'Zoom Out GUI (Ctrl+−)'}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                class="btn ui-zoom-reset"
+                onclick={() => void uiStore.resetUiZoom()}
+                aria-label="Reset GUI Zoom to 100%"
+                title="Reset GUI Zoom to 100%"
+              >
+                {Math.round(uiStore.uiZoom * 100)}%
+              </button>
+              <button
+                type="button"
+                class="btn"
+                disabled={uiStore.uiZoom >= MAX_UI_ZOOM}
+                onclick={() => void uiStore.zoomUiIn()}
+                aria-label="Zoom In GUI"
+                title={isMacPlatform() ? 'Zoom In GUI (⌘+)' : 'Zoom In GUI (Ctrl++)'}
+              >
+                +
+              </button>
+            </div>
+          </div>
+        {/if}
       </section>
 
       {#if isTauriRuntime()}
@@ -556,6 +600,17 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .ui-zoom-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ui-zoom-reset {
+    min-width: 62px;
+    text-align: center;
   }
 
   .links-grid {

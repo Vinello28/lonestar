@@ -91,7 +91,7 @@
               />
             {:else if item.kind === 'role'}
               <path
-                d="M 9 23 Q 20 19 31 23"
+                d="M 9 23 Q 20 29 31 23"
                 fill="none"
                 stroke="var(--actor-stroke)"
                 stroke-width="1.6"

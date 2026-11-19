@@ -22,7 +22,12 @@
     if (!srcBox || !dstBox) return null;
 
     const p1 = clipLineToBox(srcBox, dstBox.cx, dstBox.cy, 2);
-    const p2 = clipLineToBox(dstBox, srcBox.cx, srcBox.cy, 4);
+    const p2 = clipLineToBox(
+      dstBox,
+      srcBox.cx,
+      srcBox.cy,
+      link.kind === 'andRefinement' ? 1 : 4,
+    );
     const dx = p2.x - p1.x;
     const dy = p2.y - p1.y;
     const len = Math.max(1, Math.hypot(dx, dy));
@@ -60,10 +65,6 @@
         return 'is-a';
       case 'participatesIn':
         return 'participates-in';
-      case 'andRefinement':
-        return 'AND';
-      case 'orRefinement':
-        return 'OR';
       default:
         return null;
     }
@@ -103,6 +104,12 @@
         e.stopPropagation();
         onSelectLink(e, link);
       }}
+      ondblclick={(e) => {
+        if (link.kind === 'andRefinement' || link.kind === 'orRefinement') {
+          e.stopPropagation();
+          onBadgeClick(e, link);
+        }
+      }}
       style="cursor: pointer;"
     />
 
@@ -138,10 +145,10 @@
       <circle
         cx={geometry.circleCenter.x}
         cy={geometry.circleCenter.y}
-        r="5"
-        fill="var(--bg-canvas)"
+        r="4.5"
+        fill={strokeColor}
         stroke={strokeColor}
-        stroke-width={selected ? 2.4 : 1.8}
+        stroke-width="1"
         pointer-events="none"
       />
     {/if}

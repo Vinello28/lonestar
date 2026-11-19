@@ -224,7 +224,7 @@ pub fn travel_reimbursement_template() -> DiagramModel {
         "l-8",
         "e-payout",
         "e-audit",
-        LinkKind::AndRefinement,
+        LinkKind::OrRefinement,
     );
     let _ = ModelService::add_link(&mut model, "l-9", "a-phd", "a-student", LinkKind::IsA);
 
@@ -250,7 +250,7 @@ pub fn travel_reimbursement_template() -> DiagramModel {
         Dependency {
             id: "d-2".into(),
             depender_actor_id: "a-student".into(),
-            depender_element_id: Some("e-reimb".into()),
+            depender_element_id: None,
             dependee_actor_id: "a-university".into(),
             dependee_element_id: Some("e-audit".into()),
             dependum_name: "Reimbursement Approved".into(),
@@ -401,7 +401,7 @@ pub fn telemedicine_template() -> DiagramModel {
         Dependency {
             id: "td-1".into(),
             depender_actor_id: "a-patient".into(),
-            depender_element_id: Some("e-care".into()),
+            depender_element_id: Some("e-vitals".into()),
             dependee_actor_id: "a-platform".into(),
             dependee_element_id: Some("e-triage".into()),
             dependum_name: "24/7 Health Triage".into(),

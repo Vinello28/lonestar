@@ -53,6 +53,25 @@ pub enum MetamodelError {
     #[error("Duplicate link between the same source and target.")]
     DuplicateLink,
 
+    #[error("A parent Goal or Task cannot mix AND-refinement and OR-refinement links.")]
+    MixedRefinementOnParent,
+
+    #[error(
+        "A pair of elements cannot be connected by both a Contribution and a Qualification link."
+    )]
+    ContributionAndQualificationConflict,
+
+    #[error(
+        "At most one Contribution link is allowed between the same source and target elements."
+    )]
+    DuplicateContributionLink,
+
+    #[error("Contribution links between Qualities cannot form a cycle.")]
+    ContributionCycle,
+
+    #[error("A depender element cannot be refined or contributed to (the actor delegates it instead of fulfilling it internally).")]
+    DependerElementCannotBeRefinedOrContributed,
+
     #[error("A dependency must connect two distinct actors (depender != dependee).")]
     DependencySameActorNotAllowed,
 

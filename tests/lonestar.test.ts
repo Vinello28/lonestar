@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveDragConnection,
   validateModelClient,
+  validateProposedDependencyClient,
   validateProposedLinkClient,
 } from '../src/domain/istarRules';
 import type { DiagramModel } from '../src/domain/types';
@@ -30,14 +31,24 @@ import {
   MAX_RECENT_PROJECTS,
   recentProjectsStore,
 } from '../src/application/recentProjectsStore.svelte';
+import {
+  clampUiZoom,
+  DEFAULT_UI_ZOOM,
+  isMacPlatform,
+  MAX_UI_ZOOM,
+  MIN_UI_ZOOM,
+  resolveUiZoomShortcut,
+  UI_ZOOM_STEP,
+  uiStore,
+} from '../src/application/uiStore.svelte';
 import { isTauriRuntime } from '../src/infrastructure/backendAdapter';
 
 describe('iStar 2.0 client metamodel rules', () => {
-  it('validates canonical travel and telemedicine templates cleanly', () => {
+  it('validates canonical travel and telemedicine templates cleanly without errors or warnings', () => {
     for (const id of ['travel', 'telemedicine']) {
       const model = getBuiltinTemplateClient(id);
       const issues = validateModelClient(model);
-      expect(issues.filter((i) => i.severity === 'error')).toHaveLength(0);
+      expect(issues).toHaveLength(0);
     }
   });
 
@@ -185,6 +196,250 @@ describe('iStar 2.0 client metamodel rules', () => {
     expect(crossActor.mode).toBe('dependency');
     expect(crossActor.dependerActorId).toBe('a1');
     expect(crossActor.dependeeActorId).toBe('a2');
+  });
+
+  it('enforces strict iStar 2.0 integrity rules and smart-connect semantics on client', () => {
+    const model: DiagramModel = {
+      id: 'm-strict',
+      name: 'Strict Rules',
+      version: '2.0',
+      actors: [
+        {
+          id: 'a1',
+          name: 'Student',
+          kind: 'role',
+          x: 0,
+          y: 0,
+          width: 350,
+          height: 300,
+          collapsed: false,
+          customProperties: {},
+        },
+        {
+          id: 'a2',
+          name: 'Library',
+          kind: 'agent',
+          x: 450,
+          y: 0,
+          width: 300,
+          height: 300,
+          collapsed: false,
+          customProperties: {},
+        },
+      ],
+      elements: [
+        {
+          id: 'g1',
+          name: 'Parent Goal',
+          kind: 'goal',
+          actorId: 'a1',
+          x: 20,
+          y: 40,
+          width: 124,
+          height: 50,
+          customProperties: {},
+        },
+        {
+          id: 't1',
+          name: 'Task 1',
+          kind: 'task',
+          actorId: 'a1',
+          x: 20,
+          y: 140,
+          width: 130,
+          height: 52,
+          customProperties: {},
+        },
+        {
+          id: 't2',
+          name: 'Task 2',
+          kind: 'task',
+          actorId: 'a1',
+          x: 170,
+          y: 140,
+          width: 130,
+          height: 52,
+          customProperties: {},
+        },
+        {
+          id: 'q1',
+          name: 'Speed',
+          kind: 'quality',
+          actorId: 'a1',
+          x: 180,
+          y: 40,
+          width: 128,
+          height: 56,
+          customProperties: {},
+        },
+        {
+          id: 'q2',
+          name: 'Usability',
+          kind: 'quality',
+          actorId: 'a1',
+          x: 180,
+          y: 220,
+          width: 128,
+          height: 56,
+          customProperties: {},
+        },
+        {
+          id: 't_ext',
+          name: 'Lend Book',
+          kind: 'task',
+          actorId: 'a2',
+          x: 480,
+          y: 80,
+          width: 130,
+          height: 52,
+          customProperties: {},
+        },
+        {
+          id: 'orphan',
+          name: 'Floating Goal',
+          kind: 'goal',
+          actorId: null,
+          x: 480,
+          y: 220,
+          width: 124,
+          height: 50,
+          customProperties: {},
+        },
+      ],
+      links: [
+        { id: 'l-or1', sourceId: 't1', targetId: 'g1', kind: 'orRefinement' },
+        { id: 'l-qual', sourceId: 'q1', targetId: 't1', kind: 'qualification' },
+        {
+          id: 'l-c1',
+          sourceId: 'q1',
+          targetId: 'q2',
+          kind: 'contribution',
+          value: 'help',
+        },
+      ],
+      dependencies: [],
+      metadata: { author: '', description: '', createdAt: '', updatedAt: '' },
+    };
+
+    // Orphan element produces an error
+    const issues = validateModelClient(model);
+    expect(
+      issues.some((i) => i.severity === 'error' && i.rule === 'istar.boundary'),
+    ).toBe(true);
+
+    // Mixed AND/OR on g1 rejected; smart-connect matches existing OR refinement
+    expect(
+      validateProposedLinkClient(model, 't2', 'g1', { kind: 'andRefinement' }),
+    ).not.toBeNull();
+    const smartOr = resolveDragConnection(model, 't2', 'g1', 'smart-link');
+    expect(smartOr.valid).toBe(true);
+    expect(smartOr.linkKind).toEqual({ kind: 'orRefinement' });
+
+    // Single AND child warning
+    model.links = [
+      { id: 'l-and1', sourceId: 't1', targetId: 'g1', kind: 'andRefinement' },
+      { id: 'l-qual', sourceId: 'q1', targetId: 't1', kind: 'qualification' },
+      {
+        id: 'l-c1',
+        sourceId: 'q1',
+        targetId: 'q2',
+        kind: 'contribution',
+        value: 'help',
+      },
+    ];
+    expect(
+      validateModelClient(model).some(
+        (i) => i.severity === 'warning' && i.rule === 'istar.refinement.singleAndChild',
+      ),
+    ).toBe(true);
+
+    // Contribution + Qualification conflict rejected
+    expect(
+      validateProposedLinkClient(model, 't1', 'q1', {
+        kind: 'contribution',
+        value: 'help',
+      }),
+    ).not.toBeNull();
+
+    // Contribution cycle Q2 -> Q1 rejected
+    expect(
+      validateProposedLinkClient(model, 'q2', 'q1', {
+        kind: 'contribution',
+        value: 'make',
+      }),
+    ).not.toBeNull();
+
+    // Depender element ownership and refinement prohibition
+    expect(
+      validateProposedDependencyClient(model, {
+        dependerActorId: 'a1',
+        dependerElementId: 't_ext', // belongs to a2, not a1
+        dependeeActorId: 'a2',
+        dependeeElementId: null,
+        dependumName: 'Bad',
+        dependumKind: 'task',
+        x: 0,
+        y: 0,
+      }),
+    ).not.toBeNull();
+
+    expect(
+      validateProposedDependencyClient(model, {
+        dependerActorId: 'a1',
+        dependerElementId: 'g1', // refined parent cannot be dependerElmt
+        dependeeActorId: 'a2',
+        dependeeElementId: 't_ext',
+        dependumName: 'Bad',
+        dependumKind: 'goal',
+        x: 0,
+        y: 0,
+      }),
+    ).not.toBeNull();
+
+    // Dragging a dependency out of refined g1 is blocked cleanly
+    const blockedDepDrag = resolveDragConnection(model, 'g1', 't_ext', 'smart-link');
+    expect(blockedDepDrag.valid).toBe(false);
+
+    // Adding valid dependency on t2 blocks subsequent refinement/contribution targeting t2
+    model.dependencies.push({
+      id: 'dep-1',
+      dependerActorId: 'a1',
+      dependerElementId: 't2',
+      dependeeActorId: 'a2',
+      dependeeElementId: 't_ext',
+      dependumName: 'Book Loan',
+      dependumKind: 'task',
+      x: 350,
+      y: 120,
+      customProperties: {},
+    });
+    expect(
+      validateProposedLinkClient(model, 't1', 't2', { kind: 'orRefinement' }),
+    ).not.toBeNull();
+  });
+
+  it('renders canonical iStar 2.0 Role smile arc, filled NeededBy circle, and label-free refinement links', () => {
+    const actorNode = readFileSync(
+      resolve(process.cwd(), 'src/presentation/shapes/ActorNode.svelte'),
+      'utf8',
+    );
+    const palette = readFileSync(
+      resolve(process.cwd(), 'src/presentation/Palette.svelte'),
+      'utf8',
+    );
+    const linkEdge = readFileSync(
+      resolve(process.cwd(), 'src/presentation/shapes/LinkEdge.svelte'),
+      'utf8',
+    );
+
+    // Downward smile curve (control point below yArc = badgeCy + 0.46 * badgeR)
+    expect(actorNode).toContain('badgeCy + badgeR * 0.94');
+    expect(palette).toContain('M 9 23 Q 20 29 31 23');
+
+    // NeededBy solid filled circle and no AND/OR text pills
+    expect(linkEdge).toContain('fill={strokeColor}');
+    expect(linkEdge).not.toContain("return 'AND'");
+    expect(linkEdge).not.toContain("return 'OR'");
   });
 });
 
@@ -475,5 +730,260 @@ describe('Offline Recent Projects store & missing file handling', () => {
     expect(toolbar).toContain('isFileNotFoundError');
     expect(toolbar).toContain('recentProjectsStore.removeProject');
     expect(toolbar).toContain('isTauriRuntime()');
+  });
+});
+
+describe('GUI zoom shortcuts & Tauri webview zoom configuration', () => {
+  it('clamps GUI zoom cleanly within [0.5, 2.0] and eliminates floating-point drift', () => {
+    expect(MIN_UI_ZOOM).toBe(0.5);
+    expect(MAX_UI_ZOOM).toBe(2);
+    expect(DEFAULT_UI_ZOOM).toBe(1);
+    expect(UI_ZOOM_STEP).toBe(0.1);
+
+    expect(clampUiZoom(0.1)).toBe(0.5);
+    expect(clampUiZoom(0.5)).toBe(0.5);
+    expect(clampUiZoom(3.5)).toBe(2);
+    expect(clampUiZoom(2)).toBe(2);
+    expect(clampUiZoom(1 + 0.1 + 0.1 + 0.1)).toBe(1.3);
+    expect(clampUiZoom(1 - 0.1 - 0.1 - 0.1)).toBe(0.7);
+    expect(clampUiZoom(Number.NaN)).toBe(1);
+    expect(clampUiZoom(Number.POSITIVE_INFINITY)).toBe(1);
+    expect(clampUiZoom(Number.NEGATIVE_INFINITY)).toBe(1);
+  });
+
+  it('detects macOS/Darwin platforms accurately', () => {
+    expect(isMacPlatform('macos')).toBe(true);
+    expect(isMacPlatform('MacIntel')).toBe(true);
+    expect(isMacPlatform('Darwin')).toBe(true);
+    expect(isMacPlatform('linux')).toBe(false);
+    expect(isMacPlatform('Win32')).toBe(false);
+    expect(isMacPlatform('windows')).toBe(false);
+    expect(isMacPlatform('')).toBe(false);
+  });
+
+  it('resolves Ctrl/Cmd +/-/0 shortcuts across IT/US/numpad layouts while rejecting conflicts', () => {
+    // Linux / Windows (Ctrl)
+    expect(
+      resolveUiZoomShortcut(
+        { key: '+', code: 'BracketRight', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBe('in');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '=', code: 'Equal', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBe('in');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '+', code: 'Equal', ctrlKey: true, metaKey: false, altKey: false, shiftKey: true },
+        false,
+      ),
+    ).toBe('in');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '+', code: 'NumpadAdd', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBe('in');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '-', code: 'Slash', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBe('out');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '-', code: 'Minus', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBe('out');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '-', code: 'NumpadSubtract', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBe('out');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '_', code: 'Minus', ctrlKey: true, metaKey: false, altKey: false, shiftKey: true },
+        false,
+      ),
+    ).toBe('out');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '0', code: 'Digit0', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBe('reset');
+
+    // macOS (Cmd)
+    expect(
+      resolveUiZoomShortcut(
+        { key: '+', code: 'BracketRight', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false },
+        true,
+      ),
+    ).toBe('in');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '=', code: 'Equal', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false },
+        true,
+      ),
+    ).toBe('in');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '-', code: 'Slash', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false },
+        true,
+      ),
+    ).toBe('out');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '+', code: 'NumpadAdd', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false },
+        true,
+      ),
+    ).toBe('in');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '-', code: 'NumpadSubtract', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false },
+        true,
+      ),
+    ).toBe('out');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '0', code: 'Digit0', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false },
+        true,
+      ),
+    ).toBe('reset');
+
+    // Rejections
+    expect(
+      resolveUiZoomShortcut(
+        { key: '+', code: 'BracketRight', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        true,
+      ),
+    ).toBeNull();
+    expect(
+      resolveUiZoomShortcut(
+        { key: '+', code: 'BracketRight', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBeNull();
+    expect(
+      resolveUiZoomShortcut(
+        { key: '+', code: 'BracketRight', ctrlKey: true, metaKey: false, altKey: true, shiftKey: false },
+        false,
+      ),
+    ).toBeNull();
+    expect(
+      resolveUiZoomShortcut(
+        { key: '=', code: 'Digit0', ctrlKey: true, metaKey: false, altKey: false, shiftKey: true },
+        false,
+      ),
+    ).toBe('in');
+    expect(
+      resolveUiZoomShortcut(
+        { key: '0', code: 'Digit0', ctrlKey: true, metaKey: false, altKey: false, shiftKey: true },
+        false,
+      ),
+    ).toBeNull();
+    expect(
+      resolveUiZoomShortcut(
+        { key: '_', code: 'Digit8', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBeNull();
+    expect(
+      resolveUiZoomShortcut(
+        { key: '+', code: 'BracketRight', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBeNull();
+    expect(
+      resolveUiZoomShortcut(
+        { key: '-', code: 'Slash', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBeNull();
+    expect(
+      resolveUiZoomShortcut(
+        { key: '0', code: 'Digit0', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+        false,
+      ),
+    ).toBeNull();
+  });
+
+  it('updates uiStore.uiZoom via zoomUiIn, zoomUiOut, and resetUiZoom with clamping', async () => {
+    await uiStore.resetUiZoom();
+    expect(uiStore.uiZoom).toBe(DEFAULT_UI_ZOOM);
+
+    await uiStore.zoomUiIn();
+    expect(uiStore.uiZoom).toBe(1.1);
+    await uiStore.zoomUiIn();
+    await uiStore.zoomUiIn();
+    expect(uiStore.uiZoom).toBe(1.3);
+
+    for (let i = 0; i < 12; i++) {
+      await uiStore.zoomUiIn();
+    }
+    expect(uiStore.uiZoom).toBe(MAX_UI_ZOOM);
+
+    await uiStore.zoomUiOut();
+    expect(uiStore.uiZoom).toBe(1.9);
+
+    for (let i = 0; i < 20; i++) {
+      await uiStore.zoomUiOut();
+    }
+    expect(uiStore.uiZoom).toBe(MIN_UI_ZOOM);
+
+    await uiStore.resetUiZoom();
+    expect(uiStore.uiZoom).toBe(DEFAULT_UI_ZOOM);
+  });
+
+  it('configures Tauri capability permission, avoids zoomHotkeysEnabled conflict, and wires App/Canvas guards', () => {
+    const capability = JSON.parse(
+      readFileSync(
+        resolve(process.cwd(), 'src-tauri/capabilities/default.json'),
+        'utf8',
+      ),
+    ) as { permissions: string[] };
+    expect(capability.permissions).toContain('core:webview:allow-set-webview-zoom');
+
+    const tauriConf = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'src-tauri/tauri.conf.json'), 'utf8'),
+    ) as { app?: { windows?: Array<{ zoomHotkeysEnabled?: boolean }> } };
+    for (const win of tauriConf.app?.windows ?? []) {
+      expect(win.zoomHotkeysEnabled).not.toBe(true);
+    }
+
+    const appSvelte = readFileSync(
+      resolve(process.cwd(), 'src/App.svelte'),
+      'utf8',
+    );
+    expect(appSvelte).toContain('resolveUiZoomShortcut');
+    expect(appSvelte).toContain('isTauriRuntime()');
+    expect(appSvelte).toContain('uiStore.initUiZoom()');
+    expect(appSvelte).toContain('{ capture: true }');
+
+    const canvasSvelte = readFileSync(
+      resolve(process.cwd(), 'src/presentation/Canvas.svelte'),
+      'utf8',
+    );
+    expect(canvasSvelte).toContain('if (e.ctrlKey || e.metaKey || e.altKey) return;');
+  });
+});
+
+describe('GitHub Pages workflow configuration', () => {
+  it('separates build and deploy jobs to prevent artifact indexing race conditions', () => {
+    const pagesWorkflow = readFileSync(
+      resolve(process.cwd(), '.github/workflows/pages.yml'),
+      'utf8',
+    );
+    expect(pagesWorkflow).toContain('cancel-in-progress: false');
+    expect(pagesWorkflow).toMatch(/\n  build:\n/);
+    expect(pagesWorkflow).toMatch(/\n  deploy:\n/);
+    expect(pagesWorkflow).toContain('needs: build');
+    expect(pagesWorkflow).toContain('actions/upload-pages-artifact@v5');
+    expect(pagesWorkflow).toContain('actions/deploy-pages@v5');
   });
 });

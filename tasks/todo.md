@@ -87,6 +87,28 @@
 - [x] Add offline-only (`isTauriRuntime()`) Recent Projects dropdown menu & missing-file cleanup handling to `src/presentation/Toolbar.svelte`
 - [x] Add Vitest unit tests in `tests/lonestar.test.ts` and verify `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `npm run check`, `npm test`, and `npm run build`
 
+## Phase 14: GUI Zoom Shortcuts (Ctrl/Cmd + / - / 0)
+- [x] Grant `core:webview:allow-set-webview-zoom` permission in `src-tauri/capabilities/default.json` without enabling `zoomHotkeysEnabled`
+- [x] Add `setWebviewZoom` method on `backendAdapter` in `src/infrastructure/backendAdapter.ts` using `@tauri-apps/api/webview`
+- [x] Extend `src/application/uiStore.svelte.ts` with `uiZoom` state, persistence, zoom controls, and pure shortcut/clamping/platform helpers
+- [x] Wire global capture-phase keyboard listener and startup zoom restoration in `src/App.svelte` (desktop Tauri runtime only)
+- [x] Guard modified single-key shortcuts in `src/presentation/Canvas.svelte` (`ctrlKey || metaKey || altKey`)
+- [x] Add Desktop-only Interface Scale controls in `src/presentation/SettingsModal.svelte`
+- [x] Add unit & config invariant tests in `tests/lonestar.test.ts` and run full verification (`npm run check`, `npm test`, `npm run build`, `cargo check`, `cargo test`, `cargo clippy`, `cargo fmt`)
+
+## Phase 15: Full iStar 2.0 Syntax & Metamodel Fidelity Upgrade
+- [x] Add strict `MetamodelError` variants and validator checks (`MixedRefinementOnParent`, `ContributionAndQualificationConflict`, `DuplicateContributionLink`, `ContributionCycle`, `DependerElementCannotBeRefinedOrContributed`, orphan/mixed `Error` upgrades, single-child AND `Warning`) in `crates/lonestar-core/src/domain/errors.rs` & `validator.rs`
+- [x] Fix AI Agent `Goal -> Task` auto-flip bug, Quality-originating `Qualification` inference, OR-refinement matching, and system prompt rules in `crates/lonestar-core/src/application/agent.rs`
+- [x] Align canonical `travel` and `telemedicine` templates across `crates/lonestar-core/src/infrastructure/templates.rs` and `src/infrastructure/pistarCodec.ts` to validate with 0 errors and 0 warnings
+- [x] Synchronize TypeScript rules & store parity (`validateProposedDependencyClient`, strict `validateProposedLinkClient`/`validateModelClient`/`resolveDragConnection`, atomic refinement switching in `modelStore.svelte.ts`)
+- [x] Fix concrete syntax in `ActorNode.svelte` & `Palette.svelte` (`Role` downward smile arc) and `LinkEdge.svelte` (solid filled `NeededBy` circle, label-free refinement edges, double-click AND/OR toggle)
+- [x] Upgrade `DependencyModal.svelte` and `Inspector.svelte` (validated `Depender Element`/`Dependee Element` anchor selectors + Custom Properties editor for Actors, Elements, and Dependencies)
+- [x] Add Rust (`istar_metamodel_tests.rs`) and Vitest (`lonestar.test.ts`) coverage and update `tasks/lessons.md`
+
+## Phase 16: Fix GitHub Pages Deployment Artifact Race Condition
+- [x] Split `.github/workflows/pages.yml` into `build` and `deploy` (`needs: build`) jobs, set `cancel-in-progress: false`, and upgrade to Node 24-native actions (`checkout@v7`, `setup-node@v7`, `configure-pages@v6`, `upload-pages-artifact@v5`, `deploy-pages@v5`)
+- [x] Add regression test in `tests/lonestar.test.ts`, capture Lesson #6 in `tasks/lessons.md`, and verify YAML syntax + `npm run check` + `npm test`
+
 ---
 
 ## Final Engineering Review
@@ -97,19 +119,23 @@
   - `src-tauri/` adapts Tauri v2 IPC commands, native save/open dialogs, auto-updater (`tauri-plugin-updater`), process relaunch (`tauri-plugin-process`), and URL opener (`tauri-plugin-opener`) to `lonestar-core`.
   - `src/` mirrors Clean Architecture in TypeScript + Svelte 5 Runes (`$state`, `$derived`) with seamless Tauri-desktop / browser-demo fallback via `backendAdapter.ts`.
 - **iStar 2.0 Fidelity & Usability**:
-  - Supports all actor variants (`Actor`, `Agent`, `Role` with official bar/crescent markers and expandable/collapsible SR boundaries), all intentional elements (`Goal`, `Quality`, `Task`, `Resource`), all internal links (`AndRefinement` T-bar, `OrRefinement` triangle, `NeededBy` circle, `Contribution` `make`/`help`/`hurt`/`break`, `Qualification` dashed), actor links (`IsA`, `ParticipatesIn`), and `Dependency` (`D` semicircle markers).
+  - Supports all actor variants (`Actor`, `Agent`, `Role` with official top bar / bottom smile crescent markers and expandable/collapsible SR boundaries), all intentional elements (`Goal`, `Quality`, `Task`, `Resource`), all internal links (`AndRefinement` T-bar, `OrRefinement` triangle, `NeededBy` filled circle, `Contribution` `make`/`help`/`hurt`/`break`, `Qualification` dashed), actor links (`IsA`, `ParticipatesIn`), and `Dependency` (`D` semicircle markers).
+  - Enforces full iStar 2.0 integrity rules in both Rust and TypeScript: non-mixed AND/OR refinements per parent, single-child AND warning, `Contribution`/`Qualification` mutual exclusion, unique acyclic `Contribution` links, `dependerElement` refinement/contribution prohibition, and error-level boundary containment.
   - Pointer-based drag-and-drop from the Palette works uniformly across Linux WebKitGTK, macOS, Windows, and web browsers, with automatic boundary containment and Smart Auto-Connect drag linking.
   - Supports opening, dropping, and exporting `.json` and `.txt` (piStar 2.0 JSON-in-`.txt` and structured iStar 2.0 text notation).
 - **Theme Constraint Verification**:
   - Both `src/app.css` and `docs/styles.css` enforce `R >= G >= B` across all light (`#f6f4ef`, `#fcfbf8`, `#efece4`) and dark (`#151412`, `#1d1c19`, `#262420`) background tokens, automatically verified by Vitest.
-- **Verification Results**:
+- **Verification Results (Phase 15)**:
   - `cargo fmt --all -- --check` — clean.
   - `cargo clippy --workspace --all-targets -- -D warnings` — 0 warnings, 0 errors.
-  - `cargo test --workspace` — 11 passed, 0 failed (`lonestar-core` integration suite including 4 AI Agent tests).
-  - Live LM Studio E2E (`live_lmstudio_gemma4_e4b_end_to_end` against `http://localhost:1234/v1` with `google/gemma-4-e4b`) — passed in 8.81s (14 applied operations, 0 errors, 0 validation issues).
+  - `cargo test --workspace` — `lonestar_lib`: 2 passed, 0 failed, 1 ignored (`live_lmstudio_gemma4_e4b_end_to_end`); `lonestar-core` integration (`istar_metamodel_tests`): 13 passed, 0 failed.
   - `npm run check` (`tsc --noEmit`) — 0 errors.
-  - `npm test` (Vitest) — 7 passed, 0 failed (including AI Agent defaults & preset switching test and warm theme invariant).
+  - `npm test` (Vitest) — 20 passed, 0 failed (including strict iStar 2.0 integrity rules, canonical template 0-issue checks, concrete SVG syntax checks, GUI zoom, and warm theme checks).
   - `npm run build` (Vite + Svelte 5) — 0 errors, 0 warnings (`dist/` bundle built cleanly).
+- **Phase 14 GUI Zoom Architecture Summary**:
+  - **Tauri WebView Zoom (`src-tauri/capabilities/default.json`, `src/infrastructure/backendAdapter.ts`)**: Grants `core:webview:allow-set-webview-zoom` and calls `getCurrentWebview().setZoom(scaleFactor)` in Tauri desktop mode without enabling `zoomHotkeysEnabled`, preserving diagram canvas `Ctrl+wheel` zoom.
+  - **Application State & Shortcut Resolution (`src/application/uiStore.svelte.ts`)**: Manages `uiZoom` (`0.5`–`2.0` at `0.1` steps) persisted in `localStorage` (`lonestar-ui-zoom`), plus pure helpers (`clampUiZoom`, `isMacPlatform`, `resolveUiZoomShortcut`) supporting `Ctrl` on Linux/Windows, `Cmd` on macOS, Italian/US/Numpad `+`, `=`, `-`, `0` keys, and rejecting `AltGr` / cross-OS conflicts.
+  - **Global Wiring & UI Controls (`src/App.svelte`, `src/presentation/Canvas.svelte`, `src/presentation/SettingsModal.svelte`)**: Registers a capture-phase `keydown` handler in `App.svelte` (desktop Tauri only) and restores zoom on startup; guards `Canvas.svelte` single-key shortcuts when modifiers are held; adds Desktop-only Interface Scale controls in `SettingsModal.svelte`.
 - **Phase 7 AI Agent Architecture Summary**:
   - **Core (`crates/lonestar-core/src/application/agent.rs`)**: Pure domain/application declarative batch engine (`execute_agent_operations`) supporting ID or case-insensitive name resolution, automatic iStar 2.0 metamodel repairs (e.g., flipping reversed `NeededBy`/`Qualification`/`Contribution`, converting invalid `Agent` `IsA` links to `ParticipatesIn`, converting cross-boundary SR links into social `Dependency` links), automatic `ModelService::auto_layout`, compact semantic context summaries, system prompt with iStar 2.0 guide, OpenAI tool schema (`apply_istar_operations`), and fenced ` ```istar-ops ` / ` ```json ` fallback extraction.
   - **Tauri Backend (`src-tauri/src/agent.rs`, `commands.rs`, `lib.rs`)**: OpenAI-compatible HTTP client via `reqwest` (`rustls` + `ring`) exposing `agent_list_models` and `agent_run_turn` with automatic HTTP 400/422 non-tool fallback for local Jinja templates (LM Studio / Ollama) and a 2-round self-correction loop.

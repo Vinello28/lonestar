@@ -1,6 +1,78 @@
 import type { ActiveTool, ElementKind, SelectionTarget } from '../domain/types';
+import { backendAdapter, isTauriRuntime } from '../infrastructure/backendAdapter';
 
 export type ThemeMode = 'light' | 'dark';
+export type UiZoomAction = 'in' | 'out' | 'reset';
+
+export const DEFAULT_UI_ZOOM = 1;
+export const MIN_UI_ZOOM = 0.5;
+export const MAX_UI_ZOOM = 2;
+export const UI_ZOOM_STEP = 0.1;
+export const UI_ZOOM_STORAGE_KEY = 'lonestar-ui-zoom';
+
+export interface ZoomKeyEventLike {
+  key: string;
+  code: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  altKey: boolean;
+  shiftKey?: boolean;
+}
+
+/** Clamps and rounds the GUI zoom factor to [0.5, 2.0] with 2-decimal precision. */
+export function clampUiZoom(scale: number): number {
+  if (!Number.isFinite(scale)) return DEFAULT_UI_ZOOM;
+  const clamped = Math.min(MAX_UI_ZOOM, Math.max(MIN_UI_ZOOM, scale));
+  return Math.round(clamped * 100) / 100;
+}
+
+/** Detects macOS/Darwin runtime from an optional platform hint or navigator metadata. */
+export function isMacPlatform(platformHint?: string): boolean {
+  if (platformHint !== undefined) {
+    return /mac|darwin/i.test(platformHint);
+  }
+  if (typeof navigator === 'undefined') return false;
+  const nav = navigator as Navigator & {
+    userAgentData?: { platform?: string };
+  };
+  const raw =
+    nav.userAgentData?.platform ||
+    navigator.platform ||
+    navigator.userAgent ||
+    '';
+  return /mac|darwin/i.test(raw);
+}
+
+/** Resolves Ctrl/Cmd +/-/0 keyboard shortcuts across IT, US, and numpad layouts. */
+export function resolveUiZoomShortcut(
+  event: ZoomKeyEventLike,
+  isMac: boolean,
+): UiZoomAction | null {
+  if (event.altKey) return null;
+  const primary = isMac
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey;
+  if (!primary) return null;
+
+  if (
+    event.key === '+' ||
+    event.key === '=' ||
+    event.code === 'NumpadAdd'
+  ) {
+    return 'in';
+  }
+  if (
+    event.key === '-' ||
+    event.code === 'NumpadSubtract' ||
+    (event.key === '_' && Boolean(event.shiftKey))
+  ) {
+    return 'out';
+  }
+  if (event.key === '0' && !event.shiftKey) {
+    return 'reset';
+  }
+  return null;
+}
 
 export interface PendingDependencyDraft {
   dependerActorId: string;
@@ -18,6 +90,7 @@ export interface PaletteDragPayload {
 
 class UiStore {
   theme = $state<ThemeMode>('light');
+  uiZoom = $state<number>(DEFAULT_UI_ZOOM);
   activeTool = $state<ActiveTool>('select');
   selection = $state<SelectionTarget>(null);
   zoom = $state<number>(1);
@@ -59,6 +132,71 @@ class UiStore {
 
   toggleTheme(): void {
     this.setTheme(this.theme === 'light' ? 'dark' : 'light');
+  }
+
+  async initUiZoom(): Promise<void> {
+    if (typeof window === 'undefined') return;
+    let restored = DEFAULT_UI_ZOOM;
+    try {
+      const saved = window.localStorage.getItem(UI_ZOOM_STORAGE_KEY);
+      if (saved !== null) {
+        restored = clampUiZoom(parseFloat(saved));
+      }
+    } catch {
+      restored = DEFAULT_UI_ZOOM;
+    }
+    this.uiZoom = restored;
+    if (isTauriRuntime() && restored !== DEFAULT_UI_ZOOM) {
+      try {
+        await backendAdapter.setWebviewZoom(restored);
+      } catch (err) {
+        console.warn('Failed to restore webview zoom:', err);
+      }
+    }
+  }
+
+  async setUiZoom(
+    scale: number,
+    options?: { notify?: boolean },
+  ): Promise<void> {
+    const next = clampUiZoom(scale);
+    const changed = next !== this.uiZoom;
+    this.uiZoom = next;
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(UI_ZOOM_STORAGE_KEY, String(next));
+      } catch {
+        // Ignore storage errors
+      }
+    }
+
+    if (options?.notify) {
+      this.notify(
+        `Interface Zoom: ${Math.round(next * 100)}%${next === DEFAULT_UI_ZOOM ? ' (Reset)' : ''}`,
+        'info',
+      );
+    }
+
+    if (changed && isTauriRuntime()) {
+      try {
+        await backendAdapter.setWebviewZoom(next);
+      } catch (err) {
+        console.warn('Failed to update webview zoom:', err);
+      }
+    }
+  }
+
+  zoomUiIn(): Promise<void> {
+    return this.setUiZoom(this.uiZoom + UI_ZOOM_STEP, { notify: true });
+  }
+
+  zoomUiOut(): Promise<void> {
+    return this.setUiZoom(this.uiZoom - UI_ZOOM_STEP, { notify: true });
+  }
+
+  resetUiZoom(): Promise<void> {
+    return this.setUiZoom(DEFAULT_UI_ZOOM, { notify: true });
   }
 
   toggleAgentPanel(): void {

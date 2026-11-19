@@ -513,6 +513,8 @@
       return;
     }
 
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
     const shortcutMap: Record<string, typeof uiStore.activeTool> = {
       v: 'select',
       l: 'smart-link',

@@ -25,10 +25,24 @@
         )
       : null,
   );
+  let dependerElement = $derived(
+    uiStore.pendingDependency?.dependerElementId
+      ? modelStore.model.elements.find(
+          (e) => e.id === uiStore.pendingDependency?.dependerElementId,
+        )
+      : null,
+  );
   let dependeeActor = $derived(
     uiStore.pendingDependency
       ? modelStore.model.actors.find(
           (a) => a.id === uiStore.pendingDependency?.dependeeActorId,
+        )
+      : null,
+  );
+  let dependeeElement = $derived(
+    uiStore.pendingDependency?.dependeeElementId
+      ? modelStore.model.elements.find(
+          (e) => e.id === uiStore.pendingDependency?.dependeeElementId,
         )
       : null,
   );
@@ -37,7 +51,7 @@
     e.preventDefault();
     const draft = uiStore.pendingDependency;
     if (!draft) return;
-    const dep = modelStore.addDependency({
+    const outcome = modelStore.addDependency({
       dependerActorId: draft.dependerActorId,
       dependerElementId: draft.dependerElementId,
       dependeeActorId: draft.dependeeActorId,
@@ -47,7 +61,11 @@
       x: draft.x,
       y: draft.y,
     });
-    uiStore.selection = { type: 'dependency', id: dep.id };
+    if (!outcome.ok || !outcome.dependency) {
+      uiStore.notify(outcome.error ?? 'Invalid social dependency.', 'error');
+      return;
+    }
+    uiStore.selection = { type: 'dependency', id: outcome.dependency.id };
     uiStore.closeDependencyPrompt();
     uiStore.notify('Social dependency created', 'success');
   }
@@ -84,9 +102,13 @@
       </div>
 
       <p class="route-summary">
-        <strong>{dependerActor?.name ?? 'Depender'}</strong>
+        <strong>
+          {dependerActor?.name ?? 'Depender'}{dependerElement ? ` (${dependerElement.name})` : ''}
+        </strong>
         <span>depends on</span>
-        <strong>{dependeeActor?.name ?? 'Dependee'}</strong>
+        <strong>
+          {dependeeActor?.name ?? 'Dependee'}{dependeeElement ? ` (${dependeeElement.name})` : ''}
+        </strong>
       </p>
 
       <label class="field">

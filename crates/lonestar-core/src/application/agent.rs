@@ -454,16 +454,32 @@ pub fn parse_operations_value(val: &Value) -> (Vec<AgentOperation>, Vec<String>)
     (ops, errors)
 }
 
-fn infer_element_link_kind(src_kind: ElementKind, dst_kind: ElementKind) -> Option<LinkKind> {
+fn infer_element_link_kind(
+    model: &DiagramModel,
+    src_kind: ElementKind,
+    dst_kind: ElementKind,
+    dst_id: &str,
+) -> Option<LinkKind> {
     match (src_kind, dst_kind) {
         (ElementKind::Resource, ElementKind::Task) | (ElementKind::Task, ElementKind::Resource) => {
             Some(LinkKind::NeededBy)
         }
-        (_, ElementKind::Quality) | (ElementKind::Quality, _) => Some(LinkKind::Contribution {
+        (ElementKind::Quality, ElementKind::Goal | ElementKind::Task | ElementKind::Resource) => {
+            Some(LinkKind::Qualification)
+        }
+        (_, ElementKind::Quality) => Some(LinkKind::Contribution {
             value: ContributionValue::Help,
         }),
         (ElementKind::Goal | ElementKind::Task, ElementKind::Goal | ElementKind::Task) => {
-            Some(LinkKind::AndRefinement)
+            let has_or = model
+                .links
+                .iter()
+                .any(|l| l.target_id == dst_id && l.link_kind == LinkKind::OrRefinement);
+            Some(if has_or {
+                LinkKind::OrRefinement
+            } else {
+                LinkKind::AndRefinement
+            })
         }
         _ => None,
     }
@@ -749,7 +765,8 @@ pub fn execute_agent_operations(
                 }
 
                 // 2. Parse or infer link kind when omitted by small local models
-                let mut parsed_kind = if kind.trim().is_empty() {
+                let kind_was_omitted = kind.trim().is_empty();
+                let mut parsed_kind = if kind_was_omitted {
                     let src_actor = resolve_actor_id(model, source);
                     let dst_actor = resolve_actor_id(model, target);
                     if let (Some(src_aid), Some(dst_aid)) = (src_actor, dst_actor) {
@@ -792,7 +809,8 @@ pub fn execute_agent_operations(
                         {
                             // Cross-boundary check below will convert this to a Social Dependency
                             LinkKind::AndRefinement
-                        } else if let Some(inferred) = infer_element_link_kind(s_el.kind, d_el.kind)
+                        } else if let Some(inferred) =
+                            infer_element_link_kind(model, s_el.kind, d_el.kind, &d_eid)
                         {
                             report.repaired_warnings.push(format!(
                                 "Inferred link kind '{}' for '{}' -> '{}' because 'kind' was omitted.",
@@ -984,11 +1002,13 @@ pub fn execute_agent_operations(
                         ));
                     }
                     LinkKind::AndRefinement | LinkKind::OrRefinement
-                        if src_el.kind == ElementKind::Goal && dst_el.kind == ElementKind::Task =>
+                        if kind_was_omitted
+                            && src_el.kind == ElementKind::Goal
+                            && dst_el.kind == ElementKind::Task =>
                     {
                         std::mem::swap(&mut src_el_id, &mut dst_el_id);
                         report.repaired_warnings.push(format!(
-                            "Auto-flipped {} link to Task '{}' -> Goal '{}' (in iStar 2.0, child Tasks refine parent Goals).",
+                            "Auto-flipped {} link to Task '{}' -> Goal '{}' (inferred top-down refinement).",
                             format_link_kind_label(parsed_kind),
                             dst_el.name,
                             src_el.name
@@ -1395,13 +1415,13 @@ pub fn build_agent_system_prompt(include_istar_docs: bool) -> String {
                 - `task`: concrete action or process to execute.\n\
                 - `resource`: physical or informational entity.\n\
              4. Internal Strategic Rationale (SR) Links (source and target MUST belong to the SAME Actor):\n\
-                - `andRefinement` / `orRefinement`: connects child `goal`/`task` -> parent `goal`/`task` (acyclic; avoid mixing AND and OR on the same parent).\n\
+                - `andRefinement` / `orRefinement`: connects child `goal`/`task` -> parent `goal`/`task` (both `Task -> Goal` and sub-`Goal -> Task` refinements are valid; acyclic; mixing AND and OR on the same parent is forbidden, and `andRefinement` requires >= 2 children).\n\
                 - `neededBy`: connects `resource` (source) -> `task` (target).\n\
-                - `contribution`: connects `goal`/`task`/`resource`/`quality` (source) -> `quality` (target), with `value` in `make` | `help` | `hurt` | `break`.\n\
-                - `qualification`: connects `quality` (source) -> `goal`/`task`/`resource` (target).\n\
+                - `contribution`: connects `goal`/`task`/`resource`/`quality` (source) -> `quality` (target), with `value` in `make` | `help` | `hurt` | `break` (at most 1 contribution between the same pair; Quality-to-Quality contributions must be acyclic).\n\
+                - `qualification`: connects `quality` (source) -> `goal`/`task`/`resource` (target). Contribution and Qualification cannot connect the same two elements.\n\
              5. Social Dependencies (`addDependency`):\n\
                 - Connects TWO DISTINCT actors: `dependerActor` depends on `dependeeActor` for a `dependumName` (`goal`|`quality`|`task`|`resource`).\n\
-                - Optional `dependerElement` (must belong to `dependerActor`) and `dependeeElement` (must belong to `dependeeActor`).\n",
+                - Optional `dependerElement` (must belong to `dependerActor`) and `dependeeElement` (must belong to `dependeeActor`). A `dependerElement` cannot be refined or contributed to.\n",
         );
     }
 

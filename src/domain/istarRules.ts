@@ -2,6 +2,7 @@ import type {
   ActiveTool,
   Actor,
   ConnectionResolution,
+  Dependency,
   DiagramModel,
   ElementKind,
   IntentionalElement,
@@ -145,6 +146,18 @@ export function validateProposedLinkClient(
     ) {
       return 'Duplicate link between these two elements.';
     }
+    const conflictContribQual =
+      (linkKind.kind === 'contribution' &&
+        existing.sourceId === targetId &&
+        existing.targetId === sourceId &&
+        existing.kind === 'qualification') ||
+      (linkKind.kind === 'qualification' &&
+        existing.sourceId === targetId &&
+        existing.targetId === sourceId &&
+        existing.kind === 'contribution');
+    if (conflictContribQual) {
+      return 'A pair of elements cannot be connected by both a Contribution and a Qualification link.';
+    }
   }
 
   switch (linkKind.kind) {
@@ -155,6 +168,19 @@ export function validateProposedLinkClient(
         (dstEl.kind === 'goal' || dstEl.kind === 'task');
       if (!validKinds) {
         return 'Refinement links (AND / OR) can only connect Goals or Tasks.';
+      }
+      if (model.dependencies.some((d) => d.dependerElementId === targetId)) {
+        return 'A depender element cannot be refined or contributed to (the actor delegates it instead of fulfilling it internally).';
+      }
+      for (const existing of model.links) {
+        if (existing.id === ignoreLinkId) continue;
+        if (
+          existing.targetId === targetId &&
+          (existing.kind === 'andRefinement' || existing.kind === 'orRefinement') &&
+          existing.kind !== linkKind.kind
+        ) {
+          return 'A parent Goal or Task cannot mix AND-refinement and OR-refinement links.';
+        }
       }
       const refEdges = model.links
         .filter(
@@ -171,9 +197,23 @@ export function validateProposedLinkClient(
     case 'neededBy':
       if (srcEl.kind === 'resource' && dstEl.kind === 'task') return null;
       return 'Needed-by links must connect a Resource (source) to a Task (target).';
-    case 'contribution':
-      if (dstEl.kind === 'quality') return null;
-      return 'Contribution links must target a Quality element.';
+    case 'contribution': {
+      if (dstEl.kind !== 'quality') {
+        return 'Contribution links must target a Quality element.';
+      }
+      if (model.dependencies.some((d) => d.dependerElementId === targetId)) {
+        return 'A depender element cannot be refined or contributed to (the actor delegates it instead of fulfilling it internally).';
+      }
+      if (srcEl.kind === 'quality') {
+        const contribEdges = model.links
+          .filter((l) => l.id !== ignoreLinkId && l.kind === 'contribution')
+          .map((l) => ({ from: l.sourceId, to: l.targetId }));
+        if (hasDirectedPath(contribEdges, targetId, sourceId)) {
+          return 'Contribution links between Qualities cannot form a cycle.';
+        }
+      }
+      return null;
+    }
     case 'qualification':
       if (
         srcEl.kind === 'quality' &&
@@ -183,6 +223,83 @@ export function validateProposedLinkClient(
       }
       return 'Qualification links must go from a Quality to a Goal, Task, or Resource.';
   }
+}
+
+export function validateProposedDependencyClient(
+  model: DiagramModel,
+  dep: Omit<Dependency, 'id' | 'customProperties'>,
+  _ignoreDepId?: string,
+): string | null {
+  if (dep.dependerActorId === dep.dependeeActorId) {
+    return 'A dependency must connect two distinct actors (depender != dependee).';
+  }
+  if (!model.actors.some((a) => a.id === dep.dependerActorId)) {
+    return `Depender actor "${dep.dependerActorId}" was not found in the model.`;
+  }
+  if (!model.actors.some((a) => a.id === dep.dependeeActorId)) {
+    return `Dependee actor "${dep.dependeeActorId}" was not found in the model.`;
+  }
+  if (dep.dependerElementId) {
+    const el = model.elements.find((e) => e.id === dep.dependerElementId);
+    if (!el) {
+      return `Depender element "${dep.dependerElementId}" was not found in the model.`;
+    }
+    if (el.actorId !== dep.dependerActorId) {
+      return 'Depender element does not belong to the depender actor.';
+    }
+    const hasIncomingRefOrContrib = model.links.some(
+      (l) =>
+        l.targetId === dep.dependerElementId &&
+        (l.kind === 'andRefinement' ||
+          l.kind === 'orRefinement' ||
+          l.kind === 'contribution'),
+    );
+    if (hasIncomingRefOrContrib) {
+      return 'A depender element cannot be refined or contributed to (the actor delegates it instead of fulfilling it internally).';
+    }
+  }
+  if (dep.dependeeElementId) {
+    const el = model.elements.find((e) => e.id === dep.dependeeElementId);
+    if (!el) {
+      return `Dependee element "${dep.dependeeElementId}" was not found in the model.`;
+    }
+    if (el.actorId !== dep.dependeeActorId) {
+      return 'Dependee element does not belong to the dependee actor.';
+    }
+  }
+  return null;
+}
+
+function buildValidatedDependencyResolution(
+  model: DiagramModel,
+  dependerActorId: string,
+  dependerElementId: string | null,
+  dependeeActorId: string,
+  dependeeElementId: string | null,
+  hint: string,
+): ConnectionResolution {
+  const err = validateProposedDependencyClient(model, {
+    dependerActorId,
+    dependerElementId,
+    dependeeActorId,
+    dependeeElementId,
+    dependumName: 'Dependum',
+    dependumKind: 'goal',
+    x: 0,
+    y: 0,
+  });
+  if (err) {
+    return { valid: false, mode: 'invalid', hint: err };
+  }
+  return {
+    valid: true,
+    mode: 'dependency',
+    dependerActorId,
+    dependerElementId,
+    dependeeActorId,
+    dependeeElementId,
+    hint,
+  };
 }
 
 /**
@@ -234,15 +351,14 @@ export function resolveDragConnection(
         hint: 'A Social Dependency must connect two distinct Actors.',
       };
     }
-    return {
-      valid: true,
-      mode: 'dependency',
-      dependerActorId: srcOwnerActorId,
-      dependerElementId: srcEl ? srcEl.id : null,
-      dependeeActorId: dstOwnerActorId,
-      dependeeElementId: dstEl ? dstEl.id : null,
-      hint: 'Create Social Dependency (Depender → Dependum → Dependee)',
-    };
+    return buildValidatedDependencyResolution(
+      model,
+      srcOwnerActorId,
+      srcEl ? srcEl.id : null,
+      dstOwnerActorId,
+      dstEl ? dstEl.id : null,
+      'Create Social Dependency (Depender → Dependum → Dependee)',
+    );
   }
 
   // Actor <-> Actor connections
@@ -277,15 +393,14 @@ export function resolveDragConnection(
     }
 
     // In smart-link / select mode, Actor -> Actor defaults to Social Dependency!
-    return {
-      valid: true,
-      mode: 'dependency',
-      dependerActorId: srcActor.id,
-      dependerElementId: null,
-      dependeeActorId: dstActor.id,
-      dependeeElementId: null,
-      hint: `Social Dependency: ${srcActor.name} depends on ${dstActor.name}`,
-    };
+    return buildValidatedDependencyResolution(
+      model,
+      srcActor.id,
+      null,
+      dstActor.id,
+      null,
+      `Social Dependency: ${srcActor.name} depends on ${dstActor.name}`,
+    );
   }
 
   // Element <-> Element connections
@@ -337,7 +452,14 @@ export function resolveDragConnection(
         (srcEl.kind === 'goal' || srcEl.kind === 'task') &&
         (dstEl.kind === 'goal' || dstEl.kind === 'task')
       ) {
-        candidates.push({ src: srcEl.id, dst: dstEl.id, kind: { kind: 'andRefinement' } });
+        const hasOr = model.links.some(
+          (l) => l.targetId === dstEl.id && l.kind === 'orRefinement',
+        );
+        candidates.push({
+          src: srcEl.id,
+          dst: dstEl.id,
+          kind: { kind: hasOr ? 'orRefinement' : 'andRefinement' },
+        });
       }
 
       for (const c of candidates) {
@@ -357,15 +479,14 @@ export function resolveDragConnection(
 
     // Fallback: cross-actor element -> element creates a Social Dependency
     if (srcEl.actorId && dstEl.actorId && srcEl.actorId !== dstEl.actorId) {
-      return {
-        valid: true,
-        mode: 'dependency',
-        dependerActorId: srcEl.actorId,
-        dependerElementId: srcEl.id,
-        dependeeActorId: dstEl.actorId,
-        dependeeElementId: dstEl.id,
-        hint: 'Create Social Dependency between Actors',
-      };
+      return buildValidatedDependencyResolution(
+        model,
+        srcEl.actorId,
+        srcEl.id,
+        dstEl.actorId,
+        dstEl.id,
+        'Create Social Dependency between Actors',
+      );
     }
 
     return {
@@ -377,15 +498,14 @@ export function resolveDragConnection(
 
   // Actor <-> Element across different actors -> Dependency
   if (srcOwnerActorId && dstOwnerActorId && srcOwnerActorId !== dstOwnerActorId) {
-    return {
-      valid: true,
-      mode: 'dependency',
-      dependerActorId: srcOwnerActorId,
-      dependerElementId: srcEl ? srcEl.id : null,
-      dependeeActorId: dstOwnerActorId,
-      dependeeElementId: dstEl ? dstEl.id : null,
-      hint: 'Create Social Dependency across Actors',
-    };
+    return buildValidatedDependencyResolution(
+      model,
+      srcOwnerActorId,
+      srcEl ? srcEl.id : null,
+      dstOwnerActorId,
+      dstEl ? dstEl.id : null,
+      'Create Social Dependency across Actors',
+    );
   }
 
   return {
@@ -436,7 +556,7 @@ export function validateModelClient(model: DiagramModel): ValidationIssue[] {
   for (const el of model.elements) {
     if (!el.actorId) {
       push(
-        'warning',
+        'error',
         el.id,
         'istar.boundary',
         `Element "${el.name}" is outside an Actor boundary. Drag it inside an Actor.`,
@@ -452,6 +572,7 @@ export function validateModelClient(model: DiagramModel): ValidationIssue[] {
   }
 
   const refKindsByParent = new Map<string, Set<string>>();
+  const andChildCountByParent = new Map<string, number>();
   for (const link of model.links) {
     const err = validateProposedLinkClient(
       model,
@@ -467,6 +588,12 @@ export function validateModelClient(model: DiagramModel): ValidationIssue[] {
       const set = refKindsByParent.get(link.targetId) ?? new Set<string>();
       set.add(link.kind);
       refKindsByParent.set(link.targetId, set);
+      if (link.kind === 'andRefinement') {
+        andChildCountByParent.set(
+          link.targetId,
+          (andChildCountByParent.get(link.targetId) ?? 0) + 1,
+        );
+      }
     }
   }
 
@@ -474,29 +601,37 @@ export function validateModelClient(model: DiagramModel): ValidationIssue[] {
     if (kinds.size > 1) {
       const parent = model.elements.find((e) => e.id === parentId);
       push(
-        'warning',
+        'error',
         parentId,
         'istar.refinement.mixed',
-        `Parent "${parent?.name ?? parentId}" mixes AND and OR refinements.`,
+        `Parent "${parent?.name ?? parentId}" mixes AND-refinement and OR-refinement links. iStar 2.0 forbids mixing refinement types on the same parent.`,
+      );
+    }
+  }
+
+  for (const [parentId, count] of andChildCountByParent.entries()) {
+    if (count === 1) {
+      const parent = model.elements.find((e) => e.id === parentId);
+      push(
+        'warning',
+        parentId,
+        'istar.refinement.singleAndChild',
+        `Parent "${parent?.name ?? parentId}" has only one AND-refinement child. In iStar 2.0, AND-refinement requires at least 2 children (use OR-refinement for a single child).`,
       );
     }
   }
 
   for (const dep of model.dependencies) {
-    if (dep.dependerActorId === dep.dependeeActorId) {
-      push(
-        'error',
-        dep.id,
-        'istar.dependency',
-        'A dependency must connect two distinct actors.',
-      );
+    const depErr = validateProposedDependencyClient(model, dep, dep.id);
+    if (depErr) {
+      push('error', dep.id, 'istar.dependency', depErr);
     }
     if (!dep.dependumName.trim()) {
       push(
         'warning',
         dep.id,
         'istar.dependency.naming',
-        'Dependency dependum has an empty name.',
+        'Dependency dependum should have a descriptive name.',
       );
     }
   }

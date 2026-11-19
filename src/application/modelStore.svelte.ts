@@ -1,6 +1,7 @@
 import {
   defaultElementSize,
   validateModelClient,
+  validateProposedDependencyClient,
   validateProposedLinkClient,
 } from '../domain/istarRules';
 import type {
@@ -238,7 +239,15 @@ class ModelStore {
     return { ok: true, link };
   }
 
-  addDependency(input: Omit<Dependency, 'id' | 'customProperties'>): Dependency {
+  addDependency(input: Omit<Dependency, 'id' | 'customProperties'>): {
+    ok: boolean;
+    error?: string;
+    dependency?: Dependency;
+  } {
+    const err = validateProposedDependencyClient(this.model, input);
+    if (err) {
+      return { ok: false, error: err };
+    }
     this.pushHistory();
     const dep: Dependency = {
       ...input,
@@ -246,12 +255,12 @@ class ModelStore {
       customProperties: {},
     };
     this.model.dependencies = [...this.model.dependencies, dep];
-    return dep;
+    return { ok: true, dependency: dep };
   }
 
   updateActor(
     actorId: string,
-    patch: Partial<Pick<Actor, 'name' | 'kind' | 'collapsed'>>,
+    patch: Partial<Pick<Actor, 'name' | 'kind' | 'collapsed' | 'customProperties'>>,
   ): void {
     const actor = this.model.actors.find((a) => a.id === actorId);
     if (!actor) return;
@@ -261,7 +270,9 @@ class ModelStore {
 
   updateElement(
     elementId: string,
-    patch: Partial<Pick<IntentionalElement, 'name' | 'kind' | 'actorId'>>,
+    patch: Partial<
+      Pick<IntentionalElement, 'name' | 'kind' | 'actorId' | 'customProperties'>
+    >,
   ): void {
     const el = this.model.elements.find((e) => e.id === elementId);
     if (!el) return;
@@ -272,6 +283,38 @@ class ModelStore {
   updateLinkKind(linkId: string, newKind: LinkKind): string | null {
     const link = this.model.links.find((l) => l.id === linkId);
     if (!link) return 'Link not found';
+
+    const isRef = (k: LinkKind['kind']): k is 'andRefinement' | 'orRefinement' =>
+      k === 'andRefinement' || k === 'orRefinement';
+    if (
+      isRef(link.kind) &&
+      (newKind.kind === 'andRefinement' || newKind.kind === 'orRefinement')
+    ) {
+      if (link.kind === newKind.kind) return null;
+      const targetKind: LinkKind = newKind;
+      const switchedLinks: Link[] = this.model.links.map((l) =>
+        l.targetId === link.targetId && isRef(l.kind)
+          ? {
+              id: l.id,
+              sourceId: l.sourceId,
+              targetId: l.targetId,
+              ...targetKind,
+            }
+          : l,
+      );
+      const err = validateProposedLinkClient(
+        { ...this.model, links: switchedLinks },
+        link.sourceId,
+        link.targetId,
+        newKind,
+        linkId,
+      );
+      if (err) return err;
+      this.pushHistory();
+      this.model.links = switchedLinks;
+      return null;
+    }
+
     const err = validateProposedLinkClient(
       this.model,
       link.sourceId,
@@ -311,12 +354,30 @@ class ModelStore {
 
   updateDependency(
     depId: string,
-    patch: Partial<Pick<Dependency, 'dependumName' | 'dependumKind'>>,
-  ): void {
+    patch: Partial<
+      Pick<
+        Dependency,
+        | 'dependumName'
+        | 'dependumKind'
+        | 'dependerElementId'
+        | 'dependeeElementId'
+        | 'customProperties'
+      >
+    >,
+  ): string | null {
     const dep = this.model.dependencies.find((d) => d.id === depId);
-    if (!dep) return;
+    if (!dep) return 'Dependency not found';
+    if (
+      patch.dependerElementId !== undefined ||
+      patch.dependeeElementId !== undefined
+    ) {
+      const candidate = { ...dep, ...patch };
+      const err = validateProposedDependencyClient(this.model, candidate, depId);
+      if (err) return err;
+    }
     this.pushHistory();
     Object.assign(dep, patch);
+    return null;
   }
 
   removeActor(actorId: string): void {

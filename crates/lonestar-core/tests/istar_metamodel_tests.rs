@@ -11,17 +11,13 @@ use lonestar_core::infrastructure::{builtin_template, PiStarJsonAdapter};
 use std::collections::BTreeMap;
 
 #[test]
-fn canonical_templates_validate_without_errors() {
+fn canonical_templates_validate_without_errors_or_warnings() {
     for tpl in ["travel", "telemedicine"] {
         let model = builtin_template(tpl);
         let issues = ModelService::validate(&model);
-        let errors: Vec<_> = issues
-            .iter()
-            .filter(|i| i.severity == ValidationSeverity::Error)
-            .collect();
         assert!(
-            errors.is_empty(),
-            "Template '{tpl}' had validation errors: {errors:?}"
+            issues.is_empty(),
+            "Template '{tpl}' had validation issues: {issues:?}"
         );
     }
 }
@@ -279,7 +275,7 @@ Request Loan --and--> Borrow Book
 Student ID --neededBy--> Request Loan
 Agent: Librarian
 Task: Issue Book
-Dependency: Student.Borrow Book -> Librarian.Issue Book : Book Loan (resource)
+Dependency: Student.Request Loan -> Librarian.Issue Book : Book Loan (resource)
 ";
     let imported_txt = PiStarJsonAdapter::import_any_json(textual)
         .expect("textual i* .txt notation should import cleanly");
@@ -614,4 +610,350 @@ fn agent_recovers_small_llm_omitted_fields_and_top_down_links() {
         .filter(|i| i.severity == ValidationSeverity::Error)
         .collect();
     assert!(val_errors.is_empty(), "Validation errors: {val_errors:?}");
+}
+
+#[test]
+fn strict_istar2_integrity_rules_enforced() {
+    let mut model = DiagramModel::new("m-strict", "Strict Rules");
+    ModelService::add_actor(&mut model, "a1", "User", ActorKind::Role, 0.0, 0.0);
+    ModelService::add_actor(&mut model, "a2", "Service", ActorKind::Agent, 400.0, 0.0);
+
+    ModelService::add_element(
+        &mut model,
+        "g1",
+        "Parent Goal",
+        ElementKind::Goal,
+        Some("a1".into()),
+        20.0,
+        40.0,
+    );
+    ModelService::add_element(
+        &mut model,
+        "t1",
+        "Task One",
+        ElementKind::Task,
+        Some("a1".into()),
+        20.0,
+        120.0,
+    );
+    ModelService::add_element(
+        &mut model,
+        "t2",
+        "Task Two",
+        ElementKind::Task,
+        Some("a1".into()),
+        150.0,
+        120.0,
+    );
+    ModelService::add_element(
+        &mut model,
+        "q1",
+        "Fast Response",
+        ElementKind::Quality,
+        Some("a1".into()),
+        280.0,
+        40.0,
+    );
+    ModelService::add_element(
+        &mut model,
+        "q2",
+        "High Satisfaction",
+        ElementKind::Quality,
+        Some("a1".into()),
+        280.0,
+        120.0,
+    );
+    ModelService::add_element(
+        &mut model,
+        "g_leaf",
+        "Delegated Goal",
+        ElementKind::Goal,
+        Some("a1".into()),
+        20.0,
+        200.0,
+    );
+    ModelService::add_element(
+        &mut model,
+        "orphan1",
+        "Floating Task",
+        ElementKind::Task,
+        None,
+        500.0,
+        200.0,
+    );
+
+    // 1. Single AND-refinement child emits warning, cleared when 2nd child added
+    assert!(ModelService::add_link(&mut model, "l1", "t1", "g1", LinkKind::AndRefinement).is_ok());
+    let issues_single = ModelService::validate(&model);
+    assert!(issues_single.iter().any(|i| {
+        i.severity == ValidationSeverity::Warning
+            && i.rule == "istar.refinement.singleAndChild"
+            && i.entity_id.as_deref() == Some("g1")
+    }));
+    // Orphan element must be Error
+    assert!(issues_single.iter().any(|i| {
+        i.severity == ValidationSeverity::Error
+            && i.rule == "istar.boundary"
+            && i.entity_id.as_deref() == Some("orphan1")
+    }));
+
+    // Mixing OR on AND-refined parent fails
+    let mixed_err =
+        ModelService::validate_connection(&model, "t2", "g1", LinkKind::OrRefinement).unwrap_err();
+    assert!(matches!(
+        mixed_err,
+        lonestar_core::domain::DomainError::Metamodel(MetamodelError::MixedRefinementOnParent)
+    ));
+
+    // Adding 2nd AND child clears singleAndChild warning
+    assert!(ModelService::add_link(&mut model, "l2", "t2", "g1", LinkKind::AndRefinement).is_ok());
+    let issues_two = ModelService::validate(&model);
+    assert!(!issues_two
+        .iter()
+        .any(|i| i.rule == "istar.refinement.singleAndChild"));
+
+    // 2. Directly injected mixed refinement triggers Error in validate_model
+    let mut mixed_model = model.clone();
+    mixed_model.links.push(lonestar_core::domain::Link {
+        id: "l-bad-mix".into(),
+        source_id: "g_leaf".into(),
+        target_id: "g1".into(),
+        link_kind: LinkKind::OrRefinement,
+    });
+    let mixed_issues = ModelService::validate(&mixed_model);
+    assert!(mixed_issues.iter().any(|i| {
+        i.severity == ValidationSeverity::Error
+            && i.rule == "istar.refinement.mixed"
+            && i.entity_id.as_deref() == Some("g1")
+    }));
+
+    // 3. Contribution + Qualification mutual exclusion (both directions)
+    assert!(ModelService::add_link(&mut model, "lq1", "q1", "t1", LinkKind::Qualification).is_ok());
+    let cq_err = ModelService::validate_connection(
+        &model,
+        "t1",
+        "q1",
+        LinkKind::Contribution {
+            value: ContributionValue::Help,
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        cq_err,
+        lonestar_core::domain::DomainError::Metamodel(
+            MetamodelError::ContributionAndQualificationConflict
+        )
+    ));
+
+    assert!(ModelService::add_link(
+        &mut model,
+        "lc1",
+        "t2",
+        "q2",
+        LinkKind::Contribution {
+            value: ContributionValue::Help
+        }
+    )
+    .is_ok());
+    let qc_err =
+        ModelService::validate_connection(&model, "q2", "t2", LinkKind::Qualification).unwrap_err();
+    assert!(matches!(
+        qc_err,
+        lonestar_core::domain::DomainError::Metamodel(
+            MetamodelError::ContributionAndQualificationConflict
+        )
+    ));
+
+    // 4. Duplicate contribution between same source/target with different value rejected
+    let dup_c_err = ModelService::validate_connection(
+        &model,
+        "t2",
+        "q2",
+        LinkKind::Contribution {
+            value: ContributionValue::Hurt,
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        dup_c_err,
+        lonestar_core::domain::DomainError::Metamodel(MetamodelError::DuplicateContributionLink)
+    ));
+
+    // 5. Contribution cycle between Qualities rejected
+    assert!(ModelService::add_link(
+        &mut model,
+        "lc_q1_q2",
+        "q1",
+        "q2",
+        LinkKind::Contribution {
+            value: ContributionValue::Help
+        }
+    )
+    .is_ok());
+    let cyc_err = ModelService::validate_connection(
+        &model,
+        "q2",
+        "q1",
+        LinkKind::Contribution {
+            value: ContributionValue::Help,
+        },
+    )
+    .unwrap_err();
+    assert!(matches!(
+        cyc_err,
+        lonestar_core::domain::DomainError::Metamodel(MetamodelError::ContributionCycle)
+    ));
+
+    // 6. Depender element cannot be refined or contributed to (both orders)
+    let dep_on_refined = Dependency {
+        id: "d-bad".into(),
+        depender_actor_id: "a1".into(),
+        depender_element_id: Some("g1".into()),
+        dependee_actor_id: "a2".into(),
+        dependee_element_id: None,
+        dependum_name: "Refined Depender".into(),
+        dependum_kind: ElementKind::Goal,
+        x: 200.0,
+        y: 50.0,
+        custom_properties: BTreeMap::new(),
+    };
+    let err_dep1 = ModelService::add_dependency(&mut model, dep_on_refined).unwrap_err();
+    assert!(matches!(
+        err_dep1,
+        lonestar_core::domain::DomainError::Metamodel(
+            MetamodelError::DependerElementCannotBeRefinedOrContributed
+        )
+    ));
+
+    let dep_on_contributed_q = Dependency {
+        id: "d-bad-q".into(),
+        depender_actor_id: "a1".into(),
+        depender_element_id: Some("q2".into()),
+        dependee_actor_id: "a2".into(),
+        dependee_element_id: None,
+        dependum_name: "Contributed Quality Depender".into(),
+        dependum_kind: ElementKind::Quality,
+        x: 200.0,
+        y: 80.0,
+        custom_properties: BTreeMap::new(),
+    };
+    let err_dep2 = ModelService::add_dependency(&mut model, dep_on_contributed_q).unwrap_err();
+    assert!(matches!(
+        err_dep2,
+        lonestar_core::domain::DomainError::Metamodel(
+            MetamodelError::DependerElementCannotBeRefinedOrContributed
+        )
+    ));
+
+    // Valid dependency anchored on leaf element g_leaf blocks future refinement onto g_leaf
+    let valid_dep = Dependency {
+        id: "d-ok".into(),
+        depender_actor_id: "a1".into(),
+        depender_element_id: Some("g_leaf".into()),
+        dependee_actor_id: "a2".into(),
+        dependee_element_id: None,
+        dependum_name: "External Support".into(),
+        dependum_kind: ElementKind::Goal,
+        x: 200.0,
+        y: 200.0,
+        custom_properties: BTreeMap::new(),
+    };
+    assert!(ModelService::add_dependency(&mut model, valid_dep).is_ok());
+
+    let err_refine_depender =
+        ModelService::validate_connection(&model, "t1", "g_leaf", LinkKind::OrRefinement)
+            .unwrap_err();
+    assert!(matches!(
+        err_refine_depender,
+        lonestar_core::domain::DomainError::Metamodel(
+            MetamodelError::DependerElementCannotBeRefinedOrContributed
+        )
+    ));
+}
+
+#[test]
+fn agent_preserves_explicit_goal_to_task_refinement_and_infers_qualification() {
+    let mut model = DiagramModel::new("m-goal-task", "Goal to Task Refinement");
+    let ops = vec![
+        AgentOperation::AddActor {
+            name: "Engineer".to_string(),
+            kind: ActorKind::Role,
+        },
+        AgentOperation::AddElement {
+            actor: "Engineer".to_string(),
+            name: "Deploy Release".to_string(),
+            kind: ElementKind::Task,
+        },
+        AgentOperation::AddElement {
+            actor: "Engineer".to_string(),
+            name: "Tests Passing".to_string(),
+            kind: ElementKind::Goal,
+        },
+        AgentOperation::AddElement {
+            actor: "Engineer".to_string(),
+            name: "Security Audited".to_string(),
+            kind: ElementKind::Goal,
+        },
+        AgentOperation::AddElement {
+            actor: "Engineer".to_string(),
+            name: "Zero Downtime".to_string(),
+            kind: ElementKind::Quality,
+        },
+        // Explicit Goal -> Task refinement must NOT be flipped
+        AgentOperation::AddLink {
+            source: "Tests Passing".to_string(),
+            target: "Deploy Release".to_string(),
+            actor: Some("Engineer".to_string()),
+            kind: "andRefinement".to_string(),
+            value: None,
+        },
+        AgentOperation::AddLink {
+            source: "Security Audited".to_string(),
+            target: "Deploy Release".to_string(),
+            actor: Some("Engineer".to_string()),
+            kind: "andRefinement".to_string(),
+            value: None,
+        },
+        // Omitted-kind Quality -> Task infers Qualification directly
+        AgentOperation::AddLink {
+            source: "Zero Downtime".to_string(),
+            target: "Deploy Release".to_string(),
+            actor: Some("Engineer".to_string()),
+            kind: String::new(),
+            value: None,
+        },
+    ];
+
+    let report = execute_agent_operations(&mut model, &ops);
+    assert!(report.errors.is_empty(), "Errors: {:?}", report.errors);
+
+    let task_id = model
+        .elements
+        .iter()
+        .find(|e| e.name == "Deploy Release")
+        .unwrap()
+        .id
+        .clone();
+    let goal_id = model
+        .elements
+        .iter()
+        .find(|e| e.name == "Tests Passing")
+        .unwrap()
+        .id
+        .clone();
+    let qual_id = model
+        .elements
+        .iter()
+        .find(|e| e.name == "Zero Downtime")
+        .unwrap()
+        .id
+        .clone();
+
+    assert!(model.links.iter().any(|l| {
+        l.source_id == goal_id && l.target_id == task_id && l.link_kind == LinkKind::AndRefinement
+    }));
+    assert!(model.links.iter().any(|l| {
+        l.source_id == qual_id && l.target_id == task_id && l.link_kind == LinkKind::Qualification
+    }));
+    assert!(report.validation_issues.is_empty());
 }

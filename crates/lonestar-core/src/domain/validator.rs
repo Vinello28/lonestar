@@ -142,11 +142,26 @@ fn validate_element_link(
         if Some(existing.id.as_str()) == ignore_link_id {
             continue;
         }
-        if existing.source_id == source_id
-            && existing.target_id == target_id
-            && existing.link_kind == link_kind
-        {
-            return Err(MetamodelError::DuplicateLink);
+        if existing.source_id == source_id && existing.target_id == target_id {
+            if existing.link_kind == link_kind {
+                return Err(MetamodelError::DuplicateLink);
+            }
+            if matches!(existing.link_kind, LinkKind::Contribution { .. })
+                && matches!(link_kind, LinkKind::Contribution { .. })
+            {
+                return Err(MetamodelError::DuplicateContributionLink);
+            }
+        }
+        let conflict_contrib_qual = (matches!(link_kind, LinkKind::Contribution { .. })
+            && existing.source_id == target_id
+            && existing.target_id == source_id
+            && existing.link_kind == LinkKind::Qualification)
+            || (link_kind == LinkKind::Qualification
+                && existing.source_id == target_id
+                && existing.target_id == source_id
+                && matches!(existing.link_kind, LinkKind::Contribution { .. }));
+        if conflict_contrib_qual {
+            return Err(MetamodelError::ContributionAndQualificationConflict);
         }
     }
 
@@ -158,12 +173,23 @@ fn validate_element_link(
                 return Err(MetamodelError::RefinementRequiresGoalOrTask);
             }
 
+            if model
+                .dependencies
+                .iter()
+                .any(|d| d.depender_element_id.as_deref() == Some(target_id))
+            {
+                return Err(MetamodelError::DependerElementCannotBeRefinedOrContributed);
+            }
+
             let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
             for existing in &model.links {
                 if Some(existing.id.as_str()) == ignore_link_id {
                     continue;
                 }
                 if existing.link_kind.is_refinement() {
+                    if existing.target_id == target_id && existing.link_kind != link_kind {
+                        return Err(MetamodelError::MixedRefinementOnParent);
+                    }
                     adjacency
                         .entry(existing.source_id.as_str())
                         .or_default()
@@ -183,11 +209,34 @@ fn validate_element_link(
             }
         }
         LinkKind::Contribution { .. } => {
-            if target.kind == ElementKind::Quality {
-                Ok(())
-            } else {
-                Err(MetamodelError::ContributionTargetMustBeQuality)
+            if target.kind != ElementKind::Quality {
+                return Err(MetamodelError::ContributionTargetMustBeQuality);
             }
+            if model
+                .dependencies
+                .iter()
+                .any(|d| d.depender_element_id.as_deref() == Some(target_id))
+            {
+                return Err(MetamodelError::DependerElementCannotBeRefinedOrContributed);
+            }
+            if source.kind == ElementKind::Quality {
+                let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
+                for existing in &model.links {
+                    if Some(existing.id.as_str()) == ignore_link_id {
+                        continue;
+                    }
+                    if matches!(existing.link_kind, LinkKind::Contribution { .. }) {
+                        adjacency
+                            .entry(existing.source_id.as_str())
+                            .or_default()
+                            .push(existing.target_id.as_str());
+                    }
+                }
+                if has_directed_path(&adjacency, target_id, source_id) {
+                    return Err(MetamodelError::ContributionCycle);
+                }
+            }
+            Ok(())
         }
         LinkKind::Qualification => {
             let valid_target = matches!(
@@ -227,6 +276,17 @@ pub fn validate_proposed_dependency(
             .ok_or_else(|| MetamodelError::EntityNotFound { id: el_id.clone() })?;
         if el.actor_id.as_deref() != Some(dep.depender_actor_id.as_str()) {
             return Err(MetamodelError::DependerElementMismatch);
+        }
+        if model.links.iter().any(|l| {
+            l.target_id == *el_id
+                && matches!(
+                    l.link_kind,
+                    LinkKind::AndRefinement
+                        | LinkKind::OrRefinement
+                        | LinkKind::Contribution { .. }
+                )
+        }) {
+            return Err(MetamodelError::DependerElementCannotBeRefinedOrContributed);
         }
     }
     if let Some(ref el_id) = dep.dependee_element_id {
@@ -272,7 +332,7 @@ pub fn validate_model(model: &DiagramModel) -> Vec<ValidationIssue> {
     for el in &model.elements {
         match &el.actor_id {
             None => push_issue(
-                ValidationSeverity::Warning,
+                ValidationSeverity::Error,
                 Some(el.id.clone()),
                 "istar.boundary",
                 format!(
@@ -295,6 +355,7 @@ pub fn validate_model(model: &DiagramModel) -> Vec<ValidationIssue> {
 
     // 2. Validate every link
     let mut refinement_kinds_by_parent: HashMap<&str, HashSet<bool>> = HashMap::new();
+    let mut and_child_count_by_parent: HashMap<&str, usize> = HashMap::new();
     for link in &model.links {
         if let Err(err) = validate_link_entry(model, link) {
             push_issue(
@@ -310,6 +371,11 @@ pub fn validate_model(model: &DiagramModel) -> Vec<ValidationIssue> {
                 .entry(link.target_id.as_str())
                 .or_default()
                 .insert(is_and);
+            if is_and {
+                *and_child_count_by_parent
+                    .entry(link.target_id.as_str())
+                    .or_default() += 1;
+            }
         }
     }
 
@@ -320,11 +386,29 @@ pub fn validate_model(model: &DiagramModel) -> Vec<ValidationIssue> {
                 .map(|e| e.name.as_str())
                 .unwrap_or(parent_id);
             push_issue(
-                ValidationSeverity::Warning,
+                ValidationSeverity::Error,
                 Some(parent_id.to_string()),
                 "istar.refinement.mixed",
                 format!(
-                    "Parent '{}' mixes AND-refinement and OR-refinement links. iStar 2.0 recommends one refinement type per parent.",
+                    "Parent '{}' mixes AND-refinement and OR-refinement links. iStar 2.0 forbids mixing refinement types on the same parent.",
+                    label
+                ),
+            );
+        }
+    }
+
+    for (parent_id, count) in and_child_count_by_parent {
+        if count == 1 {
+            let label = model
+                .find_element(parent_id)
+                .map(|e| e.name.as_str())
+                .unwrap_or(parent_id);
+            push_issue(
+                ValidationSeverity::Warning,
+                Some(parent_id.to_string()),
+                "istar.refinement.singleAndChild",
+                format!(
+                    "Parent '{}' has only one AND-refinement child. In iStar 2.0, AND-refinement requires at least 2 children (use OR-refinement for a single child).",
                     label
                 ),
             );

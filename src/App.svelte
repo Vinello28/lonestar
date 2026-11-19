@@ -1,7 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { modelStore } from './application/modelStore.svelte';
-  import { uiStore } from './application/uiStore.svelte';
+  import {
+    isMacPlatform,
+    resolveUiZoomShortcut,
+    uiStore,
+  } from './application/uiStore.svelte';
   import { updateStore } from './application/updateStore.svelte';
   import { findActorAtPoint } from './domain/istarRules';
   import type { ActorKind, ElementKind } from './domain/types';
@@ -28,11 +32,31 @@
   let paletteGhost: ActivePaletteGhost | null = $state(null);
   let justFinishedPaletteDrag = false;
 
-  onMount(async () => {
-    uiStore.initTheme();
-    await modelStore.initFromBackend();
-    setTimeout(() => canvasRef?.fitToScreen(), 30);
-    void updateStore.initOnStartup();
+  onMount(() => {
+    const handleUiZoomKeyDown = (e: KeyboardEvent) => {
+      if (!isTauriRuntime()) return;
+      const action = resolveUiZoomShortcut(e, isMacPlatform());
+      if (!action) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (action === 'in') void uiStore.zoomUiIn();
+      else if (action === 'out') void uiStore.zoomUiOut();
+      else void uiStore.resetUiZoom();
+    };
+
+    window.addEventListener('keydown', handleUiZoomKeyDown, { capture: true });
+
+    void (async () => {
+      uiStore.initTheme();
+      await uiStore.initUiZoom();
+      await modelStore.initFromBackend();
+      setTimeout(() => canvasRef?.fitToScreen(), 30);
+      void updateStore.initOnStartup();
+    })();
+
+    return () => {
+      window.removeEventListener('keydown', handleUiZoomKeyDown, { capture: true });
+    };
   });
 
   function handleStartPaletteDrag(

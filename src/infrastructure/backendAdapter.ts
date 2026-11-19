@@ -204,6 +204,12 @@ export const backendAdapter = {
     }
     return tauriInvoke<AgentTurnResponse>('agent_run_turn', { request });
   },
+
+  async setWebviewZoom(scaleFactor: number): Promise<void> {
+    if (!isTauriRuntime()) return;
+    const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+    await getCurrentWebview().setZoom(scaleFactor);
+  },
 };
 
 function triggerBrowserDownload(filename: string, blob: Blob): void {

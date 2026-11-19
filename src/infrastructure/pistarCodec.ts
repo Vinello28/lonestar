@@ -884,7 +884,7 @@ export function getBuiltinTemplateClient(templateId: string): DiagramModel {
         {
           id: 'td-1',
           dependerActorId: 'a-patient',
-          dependerElementId: 'e-care',
+          dependerElementId: 'e-vitals',
           dependeeActorId: 'a-platform',
           dependeeElementId: 'e-triage',
           dependumName: '24/7 Health Triage',
@@ -1097,7 +1097,7 @@ export function getBuiltinTemplateClient(templateId: string): DiagramModel {
         kind: 'contribution',
         value: 'make',
       },
-      { id: 'l-8', sourceId: 'e-payout', targetId: 'e-audit', kind: 'andRefinement' },
+      { id: 'l-8', sourceId: 'e-payout', targetId: 'e-audit', kind: 'orRefinement' },
       { id: 'l-9', sourceId: 'a-phd', targetId: 'a-student', kind: 'isA' },
     ],
     dependencies: [
@@ -1116,7 +1116,7 @@ export function getBuiltinTemplateClient(templateId: string): DiagramModel {
       {
         id: 'd-2',
         dependerActorId: 'a-student',
-        dependerElementId: 'e-reimb',
+        dependerElementId: null,
         dependeeActorId: 'a-university',
         dependeeElementId: 'e-audit',
         dependumName: 'Reimbursement Approved',

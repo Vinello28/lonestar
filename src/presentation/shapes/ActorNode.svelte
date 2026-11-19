@@ -167,7 +167,7 @@
       {@const yArc = badgeCy + badgeR * 0.46}
       {@const dx = Math.sqrt(Math.max(0, badgeR * badgeR - (badgeR * 0.46) ** 2))}
       <path
-        d={`M ${badgeCx - dx + 1} ${yArc} Q ${badgeCx} ${badgeCy + badgeR * 0.25} ${badgeCx + dx - 1} ${yArc}`}
+        d={`M ${badgeCx - dx + 1} ${yArc} Q ${badgeCx} ${badgeCy + badgeR * 0.94} ${badgeCx + dx - 1} ${yArc}`}
         fill="none"
         stroke={strokeColor}
         stroke-width="1.7"
