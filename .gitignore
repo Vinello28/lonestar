@@ -1,10 +1,18 @@
+# Development
 node_modules/
 dist/
 target/
+
+# OS and Envs
 .DS_Store
 *.log
 .env
+
+# Build
 src-tauri/target/
 src-tauri/gen/
 docs/demo/
 coverage/
+
+# IDEs
+.idea
