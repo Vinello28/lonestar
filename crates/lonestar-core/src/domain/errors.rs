@@ -21,7 +21,7 @@ pub enum MetamodelError {
     )]
     InvalidIsALinkTypes,
 
-    #[error("Actor association links cannot form a cycle.")]
+    #[error("Actor links of the same kind (is-a or participates-in) cannot form a cycle.")]
     ActorLinkCycle,
 
     #[error("Actor links can only connect Actor nodes.")]
@@ -65,9 +65,6 @@ pub enum MetamodelError {
         "At most one Contribution link is allowed between the same source and target elements."
     )]
     DuplicateContributionLink,
-
-    #[error("Contribution links between Qualities cannot form a cycle.")]
-    ContributionCycle,
 
     #[error("A depender element cannot be refined or contributed to (the actor delegates it instead of fulfilling it internally).")]
     DependerElementCannotBeRefinedOrContributed,

@@ -66,6 +66,7 @@
         lastWorldY: number;
         snapshotTaken: boolean;
         hoverActorId: string | null;
+        blockedNotified: boolean;
       }
     | {
         type: 'move-dep';
@@ -229,6 +230,7 @@
       lastWorldY: pt.y,
       snapshotTaken: false,
       hoverActorId: el.actorId,
+      blockedNotified: false,
     };
   }
 
@@ -323,17 +325,33 @@
       const dx = pt.x - drag.lastWorldX;
       const dy = pt.y - drag.lastWorldY;
       if (Math.hypot(dx, dy) < 0.01) return;
-      if (!drag.snapshotTaken) {
-        modelStore.pushHistory();
-        drag.snapshotTaken = true;
-      }
       const el = modelStore.model.elements.find((x) => x.id === drag.elementId);
       if (el) {
         const cx = el.x + dx + el.width / 2;
         const cy = el.y + dy + el.height / 2;
         const hoveredActor = findActorAtPoint(modelStore.model.actors, cx, cy);
-        drag.hoverActorId = hoveredActor?.id ?? null;
-        modelStore.moveElementBy(drag.elementId, dx, dy, hoveredActor?.id ?? null);
+        const nextOwnerId = hoveredActor?.id ?? null;
+        // Crossing into another boundary (or out of all of them) re-parents the element, which
+        // can break iStar 2.0 rules. Keep it where it is, and keep the pointer delta pending
+        // so it catches up once the cursor is over a boundary the element may belong to.
+        const blocked =
+          nextOwnerId !== el.actorId
+            ? modelStore.elementOwnerError(el.id, nextOwnerId)
+            : null;
+        if (blocked) {
+          drag.hoverActorId = el.actorId;
+          if (!drag.blockedNotified) {
+            drag.blockedNotified = true;
+            uiStore.notify(blocked, 'error');
+          }
+          return;
+        }
+        if (!drag.snapshotTaken) {
+          modelStore.pushHistory();
+          drag.snapshotTaken = true;
+        }
+        drag.hoverActorId = nextOwnerId;
+        modelStore.moveElementBy(drag.elementId, dx, dy, nextOwnerId);
       }
       drag.lastWorldX = pt.x;
       drag.lastWorldY = pt.y;
@@ -558,10 +576,11 @@
       );
       return;
     }
+    if (!(await modelStore.confirmDiscardChanges())) return;
     try {
       const text = await file.text();
       const loaded = await backendAdapter.importJsonModel(text);
-      modelStore.replaceModel(loaded);
+      modelStore.openDocument(loaded);
       uiStore.selection = null;
       fitToScreen();
       uiStore.notify(`Loaded "${loaded.name}"`, 'success');

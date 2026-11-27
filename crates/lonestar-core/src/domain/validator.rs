@@ -107,10 +107,14 @@ fn validate_actor_link(
             }
             return Err(MetamodelError::MultipleActorLinksBetweenPair);
         }
-        adjacency
-            .entry(existing.source_id.as_str())
-            .or_default()
-            .push(existing.target_id.as_str());
+        // iStar 2.0 guide, section 8: "no is-a cycles" and "no participates-in cycles" are two
+        // independent constraints, so only edges of the proposed kind can close a cycle.
+        if existing.link_kind == link_kind {
+            adjacency
+                .entry(existing.source_id.as_str())
+                .or_default()
+                .push(existing.target_id.as_str());
+        }
     }
 
     if has_directed_path(&adjacency, target_id, source_id) {
@@ -219,23 +223,8 @@ fn validate_element_link(
             {
                 return Err(MetamodelError::DependerElementCannotBeRefinedOrContributed);
             }
-            if source.kind == ElementKind::Quality {
-                let mut adjacency: HashMap<&str, Vec<&str>> = HashMap::new();
-                for existing in &model.links {
-                    if Some(existing.id.as_str()) == ignore_link_id {
-                        continue;
-                    }
-                    if matches!(existing.link_kind, LinkKind::Contribution { .. }) {
-                        adjacency
-                            .entry(existing.source_id.as_str())
-                            .or_default()
-                            .push(existing.target_id.as_str());
-                    }
-                }
-                if has_directed_path(&adjacency, target_id, source_id) {
-                    return Err(MetamodelError::ContributionCycle);
-                }
-            }
+            // The guide only forbids a quality contributing to itself (rejected earlier as a
+            // self-loop); it places no acyclicity constraint on contributions between qualities.
             Ok(())
         }
         LinkKind::Qualification => {

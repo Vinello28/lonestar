@@ -3,13 +3,14 @@
   import { modelStore } from './application/modelStore.svelte';
   import {
     isMacPlatform,
+    resolveSaveShortcut,
     resolveUiZoomShortcut,
     uiStore,
   } from './application/uiStore.svelte';
   import { updateStore } from './application/updateStore.svelte';
   import { findActorAtPoint } from './domain/istarRules';
   import type { ActorKind, ElementKind } from './domain/types';
-  import { isTauriRuntime } from './infrastructure/backendAdapter';
+  import { backendAdapter, isTauriRuntime } from './infrastructure/backendAdapter';
   import AgentPanel from './presentation/AgentPanel.svelte';
   import Canvas, { type ActivePaletteGhost } from './presentation/Canvas.svelte';
   import DependencyModal from './presentation/DependencyModal.svelte';
@@ -20,6 +21,7 @@
 
   let svgRef: SVGSVGElement | null = $state(null);
   let canvasRef: Canvas | null = $state(null);
+  let toolbarRef: Toolbar | null = $state(null);
 
   let pendingDragStart: {
     category: 'actor' | 'element';
@@ -44,7 +46,47 @@
       else void uiStore.resetUiZoom();
     };
 
+    const handleSaveKeyDown = (e: KeyboardEvent) => {
+      const action = resolveSaveShortcut(e, isMacPlatform());
+      if (!action) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.repeat) return;
+      // Inspector fields commit on `change`, which fires on blur: commit before saving.
+      const focused = document.activeElement;
+      if (
+        focused instanceof HTMLInputElement ||
+        focused instanceof HTMLTextAreaElement ||
+        focused instanceof HTMLSelectElement
+      ) {
+        focused.blur();
+      }
+      void toolbarRef?.saveDocument({ saveAs: action === 'saveAs' });
+    };
+
+    // Web Studio: the browser shows its own generic "leave site?" prompt.
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!modelStore.isDirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
     window.addEventListener('keydown', handleUiZoomKeyDown, { capture: true });
+    window.addEventListener('keydown', handleSaveKeyDown, { capture: true });
+    if (!isTauriRuntime()) {
+      window.addEventListener('beforeunload', handleBeforeUnload);
+    }
+
+    // Desktop: closing the window asks before discarding unsaved changes.
+    let unlistenClose: (() => void) | null = null;
+    let unmounted = false;
+    backendAdapter
+      .onCloseRequested(() => modelStore.confirmDiscardChanges())
+      .then((unlisten) => {
+        if (unmounted) unlisten();
+        else unlistenClose = unlisten;
+      })
+      .catch((err) => console.warn('Failed to register the close guard:', err));
 
     void (async () => {
       uiStore.initTheme();
@@ -56,6 +98,10 @@
 
     return () => {
       window.removeEventListener('keydown', handleUiZoomKeyDown, { capture: true });
+      window.removeEventListener('keydown', handleSaveKeyDown, { capture: true });
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      unmounted = true;
+      unlistenClose?.();
     };
   });
 
@@ -179,6 +225,7 @@
 
 <div class="studio-shell">
   <Toolbar
+    bind:this={toolbarRef}
     {svgRef}
     onFitToScreen={() => canvasRef?.fitToScreen()}
   />

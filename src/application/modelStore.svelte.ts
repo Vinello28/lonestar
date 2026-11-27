@@ -1,5 +1,6 @@
 import {
   defaultElementSize,
+  introducedErrorClient,
   validateModelClient,
   validateProposedDependencyClient,
   validateProposedLinkClient,
@@ -17,7 +18,10 @@ import type {
   ValidationIssue,
 } from '../domain/types';
 import { backendAdapter } from '../infrastructure/backendAdapter';
-import { getBuiltinTemplateClient } from '../infrastructure/pistarCodec';
+import {
+  exportModelToLoneStarJson,
+  getBuiltinTemplateClient,
+} from '../infrastructure/pistarCodec';
 
 function uid(prefix: string): string {
   const rand = Math.random().toString(36).slice(2, 7);
@@ -43,15 +47,47 @@ class ModelStore {
   canUndo = $derived<boolean>(this.past.length > 0);
   canRedo = $derived<boolean>(this.future.length > 0);
 
+  /** LoneStar JSON file the diagram is bound to (desktop only); null = untitled. */
+  filePath = $state<string | null>(null);
+  /** LoneStar JSON last written to (or loaded from) disk. */
+  private savedContents = $state<string>(exportModelToLoneStarJson(this.model));
+  /** Unsaved changes: what Save would write differs from what was saved, so undo can make it clean again. */
+  isDirty = $derived<boolean>(
+    exportModelToLoneStarJson(this.model) !== this.savedContents,
+  );
+
   async initFromBackend(): Promise<void> {
     try {
-      const initial = await backendAdapter.loadInitialModel();
-      this.model = initial;
-      this.past = [];
-      this.future = [];
+      this.openDocument(await backendAdapter.loadInitialModel());
     } catch {
       // Fallback already populated
     }
+  }
+
+  /**
+   * Starts a new document: an opened file, a template or the startup model. History is reset,
+   * otherwise undo would bring back the previous diagram while still bound to the new file.
+   */
+  openDocument(model: DiagramModel, filePath: string | null = null): void {
+    this.model = cloneModel(model);
+    this.past = [];
+    this.future = [];
+    this.markSaved(filePath, exportModelToLoneStarJson(this.model));
+  }
+
+  /** Records that `contents` (the exact LoneStar JSON written) now lives at `filePath`. */
+  markSaved(filePath: string | null, contents: string): void {
+    this.filePath = filePath;
+    this.savedContents = contents;
+  }
+
+  /** True when nothing would be lost by replacing the diagram, or the user agreed to discard. */
+  async confirmDiscardChanges(): Promise<boolean> {
+    if (!this.isDirty) return true;
+    return backendAdapter.confirm(
+      `"${this.model.name}" has unsaved changes. Discard them?`,
+      'Unsaved Changes',
+    );
   }
 
   pushHistory(): void {
@@ -82,8 +118,7 @@ class ModelStore {
   }
 
   async loadTemplate(templateId: string): Promise<void> {
-    this.pushHistory();
-    this.model = await backendAdapter.loadTemplate(templateId);
+    this.openDocument(await backendAdapter.loadTemplate(templateId));
   }
 
   async applyAutoLayout(): Promise<void> {
@@ -192,19 +227,32 @@ class ModelStore {
     actor.height = Math.max(150, height);
   }
 
+  /**
+   * Why `elementId` cannot be owned by `actorId` (null = no actor), or null when it can.
+   * Ownership decides which links are internal vs. cross-boundary, so it is validated like
+   * any other edit instead of being trusted to the drag gesture.
+   */
+  elementOwnerError(elementId: string, actorId: string | null): string | null {
+    return this.editError({ type: 'element', id: elementId, patch: { actorId } });
+  }
+
+  /** Moves an element; refuses (and leaves it untouched) if the new owner breaks iStar 2.0. */
   moveElementBy(
     elementId: string,
     dx: number,
     dy: number,
     targetActorId?: string | null,
-  ): void {
+  ): string | null {
     const el = this.model.elements.find((e) => e.id === elementId);
-    if (!el) return;
-    el.x += dx;
-    el.y += dy;
-    if (targetActorId !== undefined) {
+    if (!el) return null;
+    if (targetActorId !== undefined && targetActorId !== el.actorId) {
+      const err = this.elementOwnerError(elementId, targetActorId);
+      if (err) return err;
       el.actorId = targetActorId;
     }
+    el.x += dx;
+    el.y += dy;
+    return null;
   }
 
   moveDependencyBy(depId: string, dx: number, dy: number): void {
@@ -261,11 +309,14 @@ class ModelStore {
   updateActor(
     actorId: string,
     patch: Partial<Pick<Actor, 'name' | 'kind' | 'collapsed' | 'customProperties'>>,
-  ): void {
+  ): string | null {
     const actor = this.model.actors.find((a) => a.id === actorId);
-    if (!actor) return;
+    if (!actor) return null;
+    const err = this.editError({ type: 'actor', id: actorId, patch });
+    if (err) return err;
     this.pushHistory();
     Object.assign(actor, patch);
+    return null;
   }
 
   updateElement(
@@ -273,11 +324,42 @@ class ModelStore {
     patch: Partial<
       Pick<IntentionalElement, 'name' | 'kind' | 'actorId' | 'customProperties'>
     >,
-  ): void {
+  ): string | null {
     const el = this.model.elements.find((e) => e.id === elementId);
-    if (!el) return;
+    if (!el) return null;
+    const err = this.editError({ type: 'element', id: elementId, patch });
+    if (err) return err;
     this.pushHistory();
     Object.assign(el, patch);
+    return null;
+  }
+
+  /**
+   * First iStar 2.0 error the edit would introduce, judged on a throwaway copy. Only patches
+   * that can change validity (kind / owner) are checked; renames and the like never block.
+   */
+  private editError(
+    edit:
+      | { type: 'actor'; id: string; patch: Partial<Actor> }
+      | { type: 'element'; id: string; patch: Partial<IntentionalElement> },
+  ): string | null {
+    const touchesValidity = 'kind' in edit.patch || 'actorId' in edit.patch;
+    if (!touchesValidity) return null;
+    const candidate: DiagramModel =
+      edit.type === 'actor'
+        ? {
+            ...this.model,
+            actors: this.model.actors.map((a) =>
+              a.id === edit.id ? { ...a, ...edit.patch } : a,
+            ),
+          }
+        : {
+            ...this.model,
+            elements: this.model.elements.map((e) =>
+              e.id === edit.id ? { ...e, ...edit.patch } : e,
+            ),
+          };
+    return introducedErrorClient(this.model, candidate);
   }
 
   updateLinkKind(linkId: string, newKind: LinkKind): string | null {

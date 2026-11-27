@@ -119,11 +119,15 @@ export function validateProposedLinkClient(
       if (samePair) {
         return 'Only one structural link (is-a or participates-in) is allowed between a pair of actors.';
       }
-      actorEdges.push({ from: existing.sourceId, to: existing.targetId });
+      // Guide section 8 forbids is-a cycles and participates-in cycles as two independent
+      // constraints, so only edges of the proposed kind can close a cycle.
+      if (existing.kind === linkKind.kind) {
+        actorEdges.push({ from: existing.sourceId, to: existing.targetId });
+      }
     }
 
     if (hasDirectedPath(actorEdges, targetId, sourceId)) {
-      return 'Actor links cannot form a cycle.';
+      return 'Actor links of the same kind (is-a or participates-in) cannot form a cycle.';
     }
     return null;
   }
@@ -204,14 +208,8 @@ export function validateProposedLinkClient(
       if (model.dependencies.some((d) => d.dependerElementId === targetId)) {
         return 'A depender element cannot be refined or contributed to (the actor delegates it instead of fulfilling it internally).';
       }
-      if (srcEl.kind === 'quality') {
-        const contribEdges = model.links
-          .filter((l) => l.id !== ignoreLinkId && l.kind === 'contribution')
-          .map((l) => ({ from: l.sourceId, to: l.targetId }));
-        if (hasDirectedPath(contribEdges, targetId, sourceId)) {
-          return 'Contribution links between Qualities cannot form a cycle.';
-        }
-      }
+      // The guide only forbids a quality contributing to itself (rejected earlier as a
+      // self-loop); it places no acyclicity constraint on contributions between qualities.
       return null;
     }
     case 'qualification':
@@ -532,6 +530,27 @@ export function formatLinkLabel(kind: LinkKind): string {
     case 'qualification':
       return 'qualification';
   }
+}
+
+/**
+ * Message of the first iStar 2.0 error that `after` has and `before` did not, or null.
+ * Errors are identified by (rule, entity), so editing something that is already invalid
+ * (e.g. renaming an orphan element) is never blocked by its pre-existing error.
+ */
+export function introducedErrorClient(
+  before: DiagramModel,
+  after: DiagramModel,
+): string | null {
+  const key = (i: ValidationIssue) => `${i.rule}\u0000${i.entityId ?? ''}`;
+  const known = new Set(
+    validateModelClient(before)
+      .filter((i) => i.severity === 'error')
+      .map(key),
+  );
+  const added = validateModelClient(after).find(
+    (i) => i.severity === 'error' && !known.has(key(i)),
+  );
+  return added ? added.message : null;
 }
 
 export function validateModelClient(model: DiagramModel): ValidationIssue[] {

@@ -575,6 +575,33 @@ function importTextualIstarTxt(raw: string): DiagramModel {
   return model;
 }
 
+function isNativeLoneStarShape(parsed: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(parsed.elements) &&
+    parsed.orphans === undefined &&
+    parsed.tool === undefined
+  );
+}
+
+/**
+ * True when `rawInput` is a native LoneStar JSON document (not piStar JSON nor i* text), i.e. a
+ * file that can be overwritten with `exportModelToLoneStarJson` without changing its format.
+ */
+export function isLoneStarJsonDocument(rawInput: string): boolean {
+  const cleaned = stripDataPrefix(rawInput);
+  if (!cleaned.startsWith('{')) return false;
+  try {
+    const parsed: unknown = JSON.parse(cleaned);
+    return (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      isNativeLoneStarShape(parsed as Record<string, unknown>)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function importAnyJsonModel(rawInput: string): DiagramModel {
   const cleaned = stripDataPrefix(rawInput);
   if (!cleaned) {
@@ -586,12 +613,8 @@ export function importAnyJsonModel(rawInput: string): DiagramModel {
   }
 
   const parsed = JSON.parse(cleaned) as Record<string, unknown>;
-  const isNative =
-    Array.isArray(parsed.elements) &&
-    parsed.orphans === undefined &&
-    parsed.tool === undefined;
 
-  if (isNative) {
+  if (isNativeLoneStarShape(parsed)) {
     const m = parsed as unknown as DiagramModel;
     return {
       id: m.id ?? 'imported-model',

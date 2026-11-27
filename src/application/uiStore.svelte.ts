@@ -74,6 +74,21 @@ export function resolveUiZoomShortcut(
   return null;
 }
 
+export type SaveShortcutAction = 'save' | 'saveAs';
+
+/** Resolves Ctrl+S / Ctrl+Shift+S (Cmd on macOS) to Save / Save As. */
+export function resolveSaveShortcut(
+  event: ZoomKeyEventLike,
+  isMac: boolean,
+): SaveShortcutAction | null {
+  if (event.altKey) return null;
+  const primary = isMac
+    ? event.metaKey && !event.ctrlKey
+    : event.ctrlKey && !event.metaKey;
+  if (!primary || event.key.toLowerCase() !== 's') return null;
+  return event.shiftKey ? 'saveAs' : 'save';
+}
+
 export interface PendingDependencyDraft {
   dependerActorId: string;
   dependerElementId: string | null;

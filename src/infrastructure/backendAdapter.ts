@@ -164,6 +164,35 @@ export const backendAdapter = {
     return defaultFilename;
   },
 
+  /** Overwrites `path` with `contents` without asking (Save to the current file, desktop only). */
+  async writeTextFile(path: string, contents: string): Promise<void> {
+    if (!isTauriRuntime()) {
+      throw new Error('Writing to a file path is only available in the LoneStar Desktop app.');
+    }
+    await tauriInvoke<void>('save_file_to_disk', { path, contents, isBase64: false });
+  },
+
+  /** OK / Cancel question; native dialog on desktop, `window.confirm` in the browser. */
+  async confirm(message: string, title: string): Promise<boolean> {
+    if (isTauriRuntime()) {
+      const { ask } = await import('@tauri-apps/plugin-dialog');
+      return ask(message, { title, kind: 'warning' });
+    }
+    return typeof window !== 'undefined' ? window.confirm(message) : true;
+  },
+
+  /**
+   * Desktop only: keeps the window open when `shouldClose` resolves false (the red button,
+   * Alt+F4, Cmd+W and the guarded Cmd+Q menu item all arrive here). Resolves to the unlisten fn.
+   */
+  async onCloseRequested(shouldClose: () => Promise<boolean>): Promise<() => void> {
+    if (!isTauriRuntime()) return () => {};
+    const { getCurrentWindow } = await import('@tauri-apps/api/window');
+    return getCurrentWindow().onCloseRequested(async (event) => {
+      if (!(await shouldClose())) event.preventDefault();
+    });
+  },
+
   async openJsonFileWithPathFromDialog(): Promise<{ path: string; contents: string } | null> {
     if (!isTauriRuntime()) return null;
     const { open } = await import('@tauri-apps/plugin-dialog');

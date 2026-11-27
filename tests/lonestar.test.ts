@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  introducedErrorClient,
   resolveDragConnection,
   validateModelClient,
   validateProposedDependencyClient,
@@ -18,6 +19,7 @@ import {
   exportModelToPiStarJson,
   getBuiltinTemplateClient,
   importAnyJsonModel,
+  isLoneStarJsonDocument,
 } from '../src/infrastructure/pistarCodec';
 import { compareSemver } from '../src/application/updateStore.svelte';
 import {
@@ -37,11 +39,13 @@ import {
   isMacPlatform,
   MAX_UI_ZOOM,
   MIN_UI_ZOOM,
+  resolveSaveShortcut,
   resolveUiZoomShortcut,
   UI_ZOOM_STEP,
   uiStore,
 } from '../src/application/uiStore.svelte';
-import { isTauriRuntime } from '../src/infrastructure/backendAdapter';
+import { backendAdapter, isTauriRuntime } from '../src/infrastructure/backendAdapter';
+import { modelStore } from '../src/application/modelStore.svelte';
 
 describe('iStar 2.0 client metamodel rules', () => {
   it('validates canonical travel and telemedicine templates cleanly without errors or warnings', () => {
@@ -361,9 +365,16 @@ describe('iStar 2.0 client metamodel rules', () => {
       }),
     ).not.toBeNull();
 
-    // Contribution cycle Q2 -> Q1 rejected
+    // Guide section 8 only forbids a quality contributing to itself; mutual contributions
+    // between two qualities (Q2 -> Q1 on top of Q1 -> Q2) are conformant.
     expect(
       validateProposedLinkClient(model, 'q2', 'q1', {
+        kind: 'contribution',
+        value: 'make',
+      }),
+    ).toBeNull();
+    expect(
+      validateProposedLinkClient(model, 'q1', 'q1', {
         kind: 'contribution',
         value: 'make',
       }),
@@ -985,5 +996,349 @@ describe('GitHub Pages workflow configuration', () => {
     expect(pagesWorkflow).toContain('needs: build');
     expect(pagesWorkflow).toContain('actions/upload-pages-artifact@v5');
     expect(pagesWorkflow).toContain('actions/deploy-pages@v5');
+  });
+});
+
+function guardFixture(): DiagramModel {
+  const actor = (id: string, name: string, kind: 'actor' | 'agent' | 'role', x: number) => ({
+    id,
+    name,
+    kind,
+    x,
+    y: 0,
+    width: 300,
+    height: 300,
+    collapsed: false,
+    customProperties: {},
+  });
+  const element = (
+    id: string,
+    name: string,
+    kind: 'goal' | 'task' | 'quality' | 'resource',
+    actorId: string | null,
+  ) => ({
+    id,
+    name,
+    kind,
+    actorId,
+    x: 20,
+    y: 40,
+    width: 120,
+    height: 50,
+    customProperties: {},
+  });
+  return {
+    id: 'm-guard',
+    name: 'Guard',
+    version: '2.0',
+    actors: [actor('cust', 'Customer', 'role', 0), actor('bank', 'Bank', 'role', 400)],
+    elements: [
+      element('buy', 'Buy', 'goal', 'cust'),
+      element('pay', 'Pay', 'task', 'cust'),
+      element('browse', 'Browse', 'task', 'cust'),
+    ],
+    links: [
+      { id: 'l1', sourceId: 'pay', targetId: 'buy', kind: 'andRefinement' },
+      { id: 'l2', sourceId: 'browse', targetId: 'buy', kind: 'andRefinement' },
+      { id: 'l3', sourceId: 'cust', targetId: 'bank', kind: 'isA' },
+    ],
+    dependencies: [],
+    metadata: { author: '', description: '', createdAt: '', updatedAt: '' },
+  };
+}
+
+describe('iStar 2.0 actor-link cycles are checked per link kind', () => {
+  const chain = (kind: 'isA' | 'participatesIn') => {
+    const model = guardFixture();
+    model.actors = ['a1', 'a2', 'a3'].map((id) => ({
+      id,
+      name: id,
+      kind: 'actor' as const,
+      x: 0,
+      y: 0,
+      width: 300,
+      height: 300,
+      collapsed: false,
+      customProperties: {},
+    }));
+    model.elements = [];
+    model.links = [
+      { id: 'c1', sourceId: 'a1', targetId: 'a2', kind },
+      { id: 'c2', sourceId: 'a2', targetId: 'a3', kind },
+    ];
+    return model;
+  };
+
+  it('rejects a pure is-a cycle and a pure participates-in cycle', () => {
+    for (const kind of ['isA', 'participatesIn'] as const) {
+      const err = validateProposedLinkClient(chain(kind), 'a3', 'a1', { kind });
+      expect(err, kind).not.toBeNull();
+      expect(err).toContain('cycle');
+    }
+  });
+
+  it('allows a loop that mixes is-a and participates-in edges', () => {
+    const model = chain('isA');
+    model.links[1] = { id: 'c2', sourceId: 'a2', targetId: 'a3', kind: 'participatesIn' };
+    expect(
+      validateProposedLinkClient(model, 'a3', 'a1', { kind: 'participatesIn' }),
+    ).toBeNull();
+  });
+});
+
+describe('iStar 2.0 conformance of direct edits', () => {
+  const reset = () => {
+    modelStore.model = guardFixture();
+    modelStore.past = [];
+    modelStore.future = [];
+  };
+
+  it('introducedErrorClient reports only errors the edit adds', () => {
+    const before = guardFixture();
+    expect(introducedErrorClient(before, before)).toBeNull();
+
+    const renamed = guardFixture();
+    renamed.elements[1].name = 'Pay now';
+    expect(introducedErrorClient(before, renamed)).toBeNull();
+
+    const reparented = guardFixture();
+    reparented.elements[1].actorId = 'bank';
+    expect(introducedErrorClient(before, reparented)).not.toBeNull();
+
+    // A pre-existing orphan must not block unrelated edits to it.
+    const orphan = guardFixture();
+    orphan.elements.push({
+      id: 'lonely',
+      name: 'Lonely',
+      kind: 'goal',
+      actorId: null,
+      x: 0,
+      y: 0,
+      width: 120,
+      height: 50,
+      customProperties: {},
+    });
+    const orphanRenamed = JSON.parse(JSON.stringify(orphan)) as DiagramModel;
+    orphanRenamed.elements[3].name = 'Solo';
+    expect(introducedErrorClient(orphan, orphanRenamed)).toBeNull();
+  });
+
+  it('modelStore rejects an element kind change that invalidates its links', () => {
+    reset();
+    const err = modelStore.updateElement('pay', { kind: 'resource' });
+    expect(err).not.toBeNull();
+    expect(modelStore.model.elements.find((e) => e.id === 'pay')?.kind).toBe('task');
+    expect(modelStore.past).toHaveLength(0);
+  });
+
+  it('modelStore rejects an actor kind change that invalidates actor links', () => {
+    reset();
+    const err = modelStore.updateActor('cust', { kind: 'agent' });
+    expect(err).not.toBeNull();
+    expect(modelStore.model.actors.find((a) => a.id === 'cust')?.kind).toBe('role');
+    expect(modelStore.past).toHaveLength(0);
+  });
+
+  it('modelStore rejects re-parenting that creates a cross-boundary link', () => {
+    reset();
+    expect(modelStore.updateElement('pay', { actorId: 'bank' })).not.toBeNull();
+    expect(modelStore.model.elements.find((e) => e.id === 'pay')?.actorId).toBe('cust');
+
+    const pay = modelStore.model.elements.find((e) => e.id === 'pay')!;
+    const x0 = pay.x;
+    expect(modelStore.moveElementBy('pay', 7, 7, 'bank')).not.toBeNull();
+    expect(pay.actorId).toBe('cust');
+    expect(pay.x).toBe(x0);
+
+    // Dragging a linked element out of every boundary would orphan it.
+    expect(modelStore.moveElementBy('pay', 7, 7, null)).not.toBeNull();
+    expect(pay.actorId).toBe('cust');
+  });
+
+  it('modelStore still applies conformant edits and records history', () => {
+    reset();
+    expect(modelStore.updateElement('pay', { name: 'Pay now' })).toBeNull();
+    expect(modelStore.model.elements.find((e) => e.id === 'pay')?.name).toBe('Pay now');
+    expect(modelStore.past).toHaveLength(1);
+
+    const pay = modelStore.model.elements.find((e) => e.id === 'pay')!;
+    const x0 = pay.x;
+    expect(modelStore.moveElementBy('pay', 5, 5, 'cust')).toBeNull();
+    expect(pay.x).toBe(x0 + 5);
+
+    expect(modelStore.updateActor('bank', { kind: 'actor' })).not.toBeNull(); // cust is-a bank: both must be roles
+    expect(modelStore.updateActor('bank', { name: 'Bank Ltd' })).toBeNull();
+    expect(modelStore.model.actors.find((a) => a.id === 'bank')?.name).toBe('Bank Ltd');
+  });
+});
+
+describe('Save shortcuts & unsaved-changes tracking', () => {
+  const key = (
+    k: string,
+    mods: Partial<{ ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean }>,
+  ) => ({
+    key: k,
+    code: 'KeyS',
+    ctrlKey: false,
+    metaKey: false,
+    altKey: false,
+    shiftKey: false,
+    ...mods,
+  });
+
+  it('resolves Ctrl+S / Cmd+S as save and the Shift variant as save-as on the right platform', () => {
+    expect(resolveSaveShortcut(key('s', { ctrlKey: true }), false)).toBe('save');
+    expect(resolveSaveShortcut(key('S', { ctrlKey: true, shiftKey: true }), false)).toBe('saveAs');
+    expect(resolveSaveShortcut(key('s', { metaKey: true }), true)).toBe('save');
+    expect(resolveSaveShortcut(key('S', { metaKey: true, shiftKey: true }), true)).toBe('saveAs');
+
+    // Wrong primary modifier for the platform, AltGr, or no modifier at all.
+    expect(resolveSaveShortcut(key('s', { metaKey: true }), false)).toBeNull();
+    expect(resolveSaveShortcut(key('s', { ctrlKey: true }), true)).toBeNull();
+    expect(resolveSaveShortcut(key('s', { ctrlKey: true, altKey: true }), false)).toBeNull();
+    expect(resolveSaveShortcut(key('s', {}), false)).toBeNull();
+    expect(resolveSaveShortcut(key('z', { ctrlKey: true }), false)).toBeNull();
+  });
+
+  it('recognises only native LoneStar JSON as a document Ctrl+S may overwrite', () => {
+    const travel = getBuiltinTemplateClient('travel');
+    expect(isLoneStarJsonDocument(exportModelToLoneStarJson(travel))).toBe(true);
+    expect(isLoneStarJsonDocument(`\uFEFF${exportModelToLoneStarJson(travel)}`)).toBe(true);
+    expect(isLoneStarJsonDocument(exportModelToPiStarJson(travel))).toBe(false);
+    expect(isLoneStarJsonDocument('Actor: Traveler\nGoal: Trip booked')).toBe(false);
+    expect(isLoneStarJsonDocument('{ not json')).toBe(false);
+    expect(isLoneStarJsonDocument('')).toBe(false);
+  });
+
+  it('opening a document starts clean, bound to its file, with a fresh undo history', () => {
+    modelStore.addActor('actor', 0, 0);
+    expect(modelStore.canUndo).toBe(true);
+
+    modelStore.openDocument(guardFixture(), '/tmp/diagrams/shop.lonestar.json');
+    expect(modelStore.filePath).toBe('/tmp/diagrams/shop.lonestar.json');
+    expect(modelStore.isDirty).toBe(false);
+    expect(modelStore.canUndo).toBe(false);
+    expect(modelStore.canRedo).toBe(false);
+  });
+
+  it('tracks edits as unsaved and becomes clean again when undone back to the saved state', () => {
+    modelStore.openDocument(guardFixture(), '/tmp/diagrams/shop.lonestar.json');
+
+    modelStore.updateElement('pay', { name: 'Pay now' });
+    expect(modelStore.isDirty).toBe(true);
+
+    modelStore.undo();
+    expect(modelStore.isDirty).toBe(false);
+
+    modelStore.redo();
+    expect(modelStore.isDirty).toBe(true);
+
+    // Direct writes outside history (title input, drags) count as edits too.
+    modelStore.undo();
+    modelStore.model.name = 'Renamed diagram';
+    expect(modelStore.isDirty).toBe(true);
+  });
+
+  it('markSaved records what was written, so later edits are dirty again', () => {
+    modelStore.openDocument(guardFixture());
+    expect(modelStore.filePath).toBeNull();
+
+    modelStore.updateElement('pay', { name: 'Pay now' });
+    const written = exportModelToLoneStarJson(modelStore.model);
+    modelStore.markSaved('/tmp/diagrams/shop.lonestar.json', written);
+    expect(modelStore.isDirty).toBe(false);
+    expect(modelStore.filePath).toBe('/tmp/diagrams/shop.lonestar.json');
+    expect(modelStore.canUndo).toBe(true); // saving never touches history
+
+    modelStore.updateElement('pay', { name: 'Pay later' });
+    expect(modelStore.isDirty).toBe(true);
+  });
+
+  it('an edit made while a save is in flight stays unsaved', () => {
+    modelStore.openDocument(guardFixture());
+    const written = exportModelToLoneStarJson(modelStore.model);
+    modelStore.updateElement('pay', { name: 'Edited during save' });
+    modelStore.markSaved(null, written);
+    expect(modelStore.isDirty).toBe(true);
+  });
+
+  it('loading a template starts a new untitled, clean document', async () => {
+    modelStore.openDocument(guardFixture(), '/tmp/diagrams/shop.lonestar.json');
+    modelStore.updateElement('pay', { name: 'Pay now' });
+
+    await modelStore.loadTemplate('telemedicine');
+    expect(modelStore.filePath).toBeNull();
+    expect(modelStore.isDirty).toBe(false);
+    expect(modelStore.canUndo).toBe(false);
+  });
+
+  it('wires the global save shortcut, the save actions and the indicator', () => {
+    const appSvelte = readFileSync(resolve(process.cwd(), 'src/App.svelte'), 'utf8');
+    expect(appSvelte).toContain('resolveSaveShortcut');
+    expect(appSvelte).toContain('toolbarRef?.saveDocument');
+
+    const toolbar = readFileSync(
+      resolve(process.cwd(), 'src/presentation/Toolbar.svelte'),
+      'utf8',
+    );
+    expect(toolbar).toContain('export async function saveDocument');
+    expect(toolbar).toContain('modelStore.isDirty');
+    expect(toolbar).toContain('modelStore.confirmDiscardChanges()');
+
+    const canvas = readFileSync(
+      resolve(process.cwd(), 'src/presentation/Canvas.svelte'),
+      'utf8',
+    );
+    expect(canvas).toContain('modelStore.confirmDiscardChanges()');
+    expect(canvas).toContain('modelStore.openDocument(');
+  });
+});
+
+describe('Close guard for unsaved changes & toolbar Save button', () => {
+  it('asks before discarding only when there are unsaved changes, and honours the answer', async () => {
+    const confirmSpy = vi.spyOn(backendAdapter, 'confirm').mockResolvedValue(false);
+    try {
+      modelStore.openDocument(guardFixture());
+      expect(await modelStore.confirmDiscardChanges()).toBe(true);
+      expect(confirmSpy).not.toHaveBeenCalled();
+
+      modelStore.updateElement('pay', { name: 'Pay now' });
+      expect(await modelStore.confirmDiscardChanges()).toBe(false);
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+
+      confirmSpy.mockResolvedValue(true);
+      expect(await modelStore.confirmDiscardChanges()).toBe(true);
+    } finally {
+      confirmSpy.mockRestore();
+    }
+  });
+
+  it('guards window close on desktop and tab close on the web', () => {
+    const appSvelte = readFileSync(resolve(process.cwd(), 'src/App.svelte'), 'utf8');
+    expect(appSvelte).toContain('.onCloseRequested(() => modelStore.confirmDiscardChanges())');
+    expect(appSvelte).toContain("'beforeunload'");
+
+    const capability = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'src-tauri/capabilities/default.json'), 'utf8'),
+    ) as { permissions: string[] };
+    // onCloseRequested destroys the window itself once the guard lets it close.
+    expect(capability.permissions).toContain('core:window:allow-destroy');
+
+    const libRs = readFileSync(resolve(process.cwd(), 'src-tauri/src/lib.rs'), 'utf8');
+    expect(libRs).toContain('CmdOrCtrl+Q');
+    expect(libRs).toContain('on_menu_event');
+    expect(libRs).toContain('.close()');
+  });
+
+  it('adds an icon Save button next to Open that saves the document', () => {
+    const toolbar = readFileSync(
+      resolve(process.cwd(), 'src/presentation/Toolbar.svelte'),
+      'utf8',
+    );
+    expect(toolbar).toContain('class="tb-btn hero-control save-btn"');
+    expect(toolbar).toContain('class:dirty={modelStore.isDirty}');
+    const saveButton = toolbar.slice(toolbar.indexOf('save-btn"'));
+    expect(saveButton.slice(0, 1200)).toContain('onclick={() => saveDocument()}');
+    expect(saveButton.slice(0, 1200)).toContain('class="tb-icon-svg"');
   });
 });

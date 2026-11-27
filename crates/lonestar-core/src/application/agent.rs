@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{json, Value};
@@ -211,6 +211,41 @@ pub struct AgentExecutionReport {
     pub errors: Vec<String>,
     pub validation_issues: Vec<ValidationIssue>,
     pub mutated: bool,
+}
+
+/// Identity of an iStar 2.0 error, stable across renames and message rewording.
+fn error_keys(model: &DiagramModel) -> HashSet<(String, Option<String>)> {
+    ModelService::validate(model)
+        .into_iter()
+        .filter(|i| i.severity == ValidationSeverity::Error)
+        .map(|i| (i.rule, i.entity_id))
+        .collect()
+}
+
+/// Applies a direct write, i.e. one that bypasses `ModelService::add_link` / `add_dependency`
+/// and therefore their metamodel checks. The write is atomic: if it introduces an iStar 2.0
+/// error the model did not already have, the model is restored and the messages are returned.
+/// Errors that were already present (e.g. in a user-authored model) never block the write.
+fn apply_checked(
+    model: &mut DiagramModel,
+    mutate: impl FnOnce(&mut DiagramModel),
+) -> Result<(), String> {
+    let known = error_keys(model);
+    let snapshot = model.clone();
+    mutate(model);
+    let introduced: Vec<String> = ModelService::validate(model)
+        .into_iter()
+        .filter(|i| {
+            i.severity == ValidationSeverity::Error
+                && !known.contains(&(i.rule.clone(), i.entity_id.clone()))
+        })
+        .map(|i| i.message)
+        .collect();
+    if introduced.is_empty() {
+        return Ok(());
+    }
+    *model = snapshot;
+    Err(introduced.join(" "))
 }
 
 fn next_unique_id(prefix: &str, model: &DiagramModel) -> String {
@@ -551,23 +586,33 @@ pub fn execute_agent_operations(
                     continue;
                 };
                 last_actor_id = Some(actor_id.clone());
-                if let Some(target_actor) = model.find_actor_mut(&actor_id) {
-                    if let Some(nn) = new_name {
-                        if !nn.trim().is_empty() {
-                            target_actor.name = nn.trim().to_string();
+                let outcome = apply_checked(model, |m| {
+                    if let Some(target_actor) = m.find_actor_mut(&actor_id) {
+                        if let Some(nn) = new_name {
+                            if !nn.trim().is_empty() {
+                                target_actor.name = nn.trim().to_string();
+                            }
+                        }
+                        if let Some(k) = kind {
+                            target_actor.kind = *k;
+                        }
+                        if let Some(c) = collapsed {
+                            target_actor.collapsed = *c;
                         }
                     }
-                    if let Some(k) = kind {
-                        target_actor.kind = *k;
+                });
+                match outcome {
+                    Ok(()) => {
+                        if let Some(updated) = model.find_actor(&actor_id) {
+                            report.mutated = true;
+                            report
+                                .applied_operations
+                                .push(format!("Updated Actor '{}' ({actor_id}).", updated.name));
+                        }
                     }
-                    if let Some(c) = collapsed {
-                        target_actor.collapsed = *c;
-                    }
-                    report.mutated = true;
-                    report.applied_operations.push(format!(
-                        "Updated Actor '{}' ({actor_id}).",
-                        target_actor.name
-                    ));
+                    Err(reason) => report.errors.push(format!(
+                        "UpdateActor rejected for '{actor}': it would violate iStar 2.0. {reason}"
+                    )),
                 }
             }
             AgentOperation::RemoveActor { actor } => {
@@ -685,22 +730,33 @@ pub fn execute_agent_operations(
                     ));
                     continue;
                 };
-                if let Some(el) = model.find_element_mut(&el_id) {
-                    if let Some(nn) = new_name {
-                        if !nn.trim().is_empty() {
-                            el.name = nn.trim().to_string();
+                let outcome = apply_checked(model, |m| {
+                    if let Some(el) = m.find_element_mut(&el_id) {
+                        if let Some(nn) = new_name {
+                            if !nn.trim().is_empty() {
+                                el.name = nn.trim().to_string();
+                            }
+                        }
+                        if let Some(k) = kind {
+                            el.kind = *k;
+                            let (w, h) = crate::application::default_element_size(*k);
+                            el.width = w;
+                            el.height = h;
                         }
                     }
-                    if let Some(k) = kind {
-                        el.kind = *k;
-                        let (w, h) = crate::application::default_element_size(*k);
-                        el.width = w;
-                        el.height = h;
+                });
+                match outcome {
+                    Ok(()) => {
+                        if let Some(updated) = model.find_element(&el_id) {
+                            report.mutated = true;
+                            report
+                                .applied_operations
+                                .push(format!("Updated Element '{}' ({el_id}).", updated.name));
+                        }
                     }
-                    report.mutated = true;
-                    report
-                        .applied_operations
-                        .push(format!("Updated Element '{}' ({el_id}).", el.name));
+                    Err(reason) => report.errors.push(format!(
+                        "UpdateElement rejected for '{element}': it would violate iStar 2.0. {reason}"
+                    )),
                 }
             }
             AgentOperation::RemoveElement { element, actor } => {
@@ -746,19 +802,33 @@ pub fn execute_agent_operations(
                             .find_actor(&aid)
                             .map(|a| a.name.clone())
                             .unwrap_or_else(|| aid.clone());
-                        if let Some(el) = model.find_element_mut(&eid) {
-                            let el_name = el.name.clone();
-                            let prev_actor = el.actor_id.clone();
-                            el.actor_id = Some(aid.clone());
-                            if prev_actor.as_deref() != Some(aid.as_str()) {
-                                report.mutated = true;
+                        let Some((el_name, prev_actor)) = model
+                            .find_element(&eid)
+                            .map(|e| (e.name.clone(), e.actor_id.clone()))
+                        else {
+                            continue;
+                        };
+                        let new_owner = aid.clone();
+                        let outcome = apply_checked(model, |m| {
+                            if let Some(el) = m.find_element_mut(&eid) {
+                                el.actor_id = Some(new_owner);
                             }
-                            report.repaired_warnings.push(format!(
-                                "Assigned element '{el_name}' inside actor '{actor_name}' boundary (iStar 2.0 represents actor ownership via containment, not links)."
-                            ));
-                            report.applied_operations.push(format!(
-                                "Contained element '{el_name}' inside actor '{actor_name}' ({eid})."
-                            ));
+                        });
+                        match outcome {
+                            Ok(()) => {
+                                if prev_actor.as_deref() != Some(aid.as_str()) {
+                                    report.mutated = true;
+                                }
+                                report.repaired_warnings.push(format!(
+                                    "Assigned element '{el_name}' inside actor '{actor_name}' boundary (iStar 2.0 represents actor ownership via containment, not links)."
+                                ));
+                                report.applied_operations.push(format!(
+                                    "Contained element '{el_name}' inside actor '{actor_name}' ({eid})."
+                                ));
+                            }
+                            Err(reason) => report.errors.push(format!(
+                                "Cannot move element '{el_name}' into actor '{actor_name}': it would violate iStar 2.0. {reason}"
+                            )),
                         }
                         continue;
                     }

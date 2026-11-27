@@ -120,7 +120,7 @@
   - `src/` mirrors Clean Architecture in TypeScript + Svelte 5 Runes (`$state`, `$derived`) with seamless Tauri-desktop / browser-demo fallback via `backendAdapter.ts`.
 - **iStar 2.0 Fidelity & Usability**:
   - Supports all actor variants (`Actor`, `Agent`, `Role` with official top bar / bottom smile crescent markers and expandable/collapsible SR boundaries), all intentional elements (`Goal`, `Quality`, `Task`, `Resource`), all internal links (`AndRefinement` T-bar, `OrRefinement` triangle, `NeededBy` filled circle, `Contribution` `make`/`help`/`hurt`/`break`, `Qualification` dashed), actor links (`IsA`, `ParticipatesIn`), and `Dependency` (`D` semicircle markers).
-  - Enforces full iStar 2.0 integrity rules in both Rust and TypeScript: non-mixed AND/OR refinements per parent, single-child AND warning, `Contribution`/`Qualification` mutual exclusion, unique acyclic `Contribution` links, `dependerElement` refinement/contribution prohibition, and error-level boundary containment.
+  - Enforces full iStar 2.0 integrity rules in both Rust and TypeScript: non-mixed AND/OR refinements per parent, single-child AND warning, `Contribution`/`Qualification` mutual exclusion, unique `Contribution` links (no self-contribution; Phase 16 removed the stricter-than-spec Quality contribution-cycle rule), `dependerElement` refinement/contribution prohibition, and error-level boundary containment.
   - Pointer-based drag-and-drop from the Palette works uniformly across Linux WebKitGTK, macOS, Windows, and web browsers, with automatic boundary containment and Smart Auto-Connect drag linking.
   - Supports opening, dropping, and exporting `.json` and `.txt` (piStar 2.0 JSON-in-`.txt` and structured iStar 2.0 text notation).
 - **Theme Constraint Verification**:
@@ -140,3 +140,54 @@
   - **Core (`crates/lonestar-core/src/application/agent.rs`)**: Pure domain/application declarative batch engine (`execute_agent_operations`) supporting ID or case-insensitive name resolution, automatic iStar 2.0 metamodel repairs (e.g., flipping reversed `NeededBy`/`Qualification`/`Contribution`, converting invalid `Agent` `IsA` links to `ParticipatesIn`, converting cross-boundary SR links into social `Dependency` links), automatic `ModelService::auto_layout`, compact semantic context summaries, system prompt with iStar 2.0 guide, OpenAI tool schema (`apply_istar_operations`), and fenced ` ```istar-ops ` / ` ```json ` fallback extraction.
   - **Tauri Backend (`src-tauri/src/agent.rs`, `commands.rs`, `lib.rs`)**: OpenAI-compatible HTTP client via `reqwest` (`rustls` + `ring`) exposing `agent_list_models` and `agent_run_turn` with automatic HTTP 400/422 non-tool fallback for local Jinja templates (LM Studio / Ollama) and a 2-round self-correction loop.
   - **Desktop-Only Frontend (`agentStore.svelte.ts`, `AgentPanel.svelte`, `Toolbar.svelte`, `SettingsModal.svelte`, `App.svelte`)**: Guarded strictly by `isTauriRuntime()` so the GitHub Pages Web Studio stays unaffected, with persisted presets (`LM Studio`, `Ollama`, `OpenAI`, `OpenRouter`, `Custom`), selection-aware context badge, quick action chips, expandable operation/repair badges, and single-snapshot `modelStore` Undo/Redo.
+
+## Phase 16: iStar 2.0 Conformance Audit & Fixes
+- Reference: iStar 2.0 Language Guide (arXiv 1605.07767v3) §3, §5, §6 (Table 1), §8 (integrity constraints), cross-checked against piStar's `tool/language/constraints.js`.
+- Method: 99-case differential probe (every Table 1 source/target pair, actor-link, dependency and model-level rules) run against both `validator.rs` and `istarRules.ts`. Probes live outside the repo (scratchpad); both validators gave identical results.
+- Result: 94/99 cases match the guide. Hard rules (Table 1 matrix, is-a typing, one actor link per pair, same-actor element links, contribution XOR qualification, depender/dependee ownership, dependerElmt not refined/contributed, refinement cycles, AND/OR mixing) are all correct.
+- Findings (fixed in this phase unless noted):
+  - [x] F1 `validator.rs:223-237` / `istarRules.ts:207-214`: acyclic-contribution rule among Qualities is stricter than the guide (only self-contribution is forbidden; piStar has no such check). Valid mutual Q↔Q contributions produce `istar.link` errors, also on import.
+  - [x] F2 `validator.rs:92-118` / `istarRules.ts:112-127`: is-a and participates-in edges share one graph, so a mixed cycle (A is-a B, B part-in C, C part-in A) is rejected; guide §8 forbids is-a cycles and participates-in cycles separately.
+  - [x] F3 `agent.rs:744-764`, `:694-699`, `:560-562`: AI agent writes `actor_id` / `kind` directly without validation; `validation_issues` (`agent.rs:1223`) is not used by the self-correction loop nor by `agentStore.svelte.ts`.
+  - [~] F4 (UI-edit part fixed; the rest deliberately left open, see Review) Minor: unvalidated UI mutations (`moveElementBy`, `updateElement`, `updateActor` kind) are caught only post-hoc by the issues panel; mixed AND/OR parent is reported 3x; text/JSON import silently defaults unknown link kind to AND-refinement and missing contribution label to `help`.
+- Note: `docs/index.html` and README claim "acyclic" checks as iStar 2.0 fidelity; F1 should be reworded if it stays.
+- Review (fixes):
+  - F1: removed the Quality contribution-cycle rule and `MetamodelError::ContributionCycle` (Rust `validator.rs`/`errors.rs`, TS `istarRules.ts`); self-contribution is still rejected as a self-loop.
+  - F2: actor-link cycle detection now builds one graph per link kind (is-a / participates-in), in Rust and TS; error text says "of the same kind".
+  - F3: `apply_checked` in `agent.rs` wraps the three direct writes (`UpdateActor` kind, `UpdateElement` kind, containment `AddLink`); a write that introduces a new `(rule, entity)` error is rolled back and reported in `report.errors`, which feeds the existing 2-round self-correction loop.
+  - F4 (UI edits): `introducedErrorClient` + guarded `modelStore.updateActor/updateElement/moveElementBy` (return `string | null`); `Inspector.svelte` notifies and resets the owner `<select>`; `Canvas.svelte` drag refuses re-parenting that would break a rule (element stays put, one notification per drag, pointer delta kept pending).
+  - Tests: Rust 18 passed (was 13; +per-kind cycles, +3 agent guard rejections, +guard allows conformant writes, 2 existing tests rewritten to the spec), Vitest 28 passed (was 21). The 3 agent rejection tests were mutation-checked: with the rollback disabled all 3 fail.
+  - Re-run of the 99-case guide probe: 0 divergences on both Rust and TS (was 5).
+  - Verified: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `npm run check`, `npm test`, `npm run build` all clean.
+- Deliberately NOT changed (not iStar 2.0 violations, or a product decision): mixed AND/OR parent reported 3x; import silently defaulting unknown link kind to AND-refinement / missing contribution label to `help`; agent cross-boundary auto-repair semantics; ambiguous-name resolution in the agent; dependency dedup; `validation_issues` stays non-blocking in the agent report.
+
+## Phase 17: Save Shortcuts (Ctrl/Cmd+S, Ctrl/Cmd+Shift+S) & Unsaved-Changes Indicator
+- Design: `modelStore` owns the document lifecycle (it already owns history and `initFromBackend`), so it also holds the bound `filePath` and the last-saved LoneStar JSON; `isDirty` compares what *would* be written with what *was* written, so undoing back to the saved state is clean again. Ctrl/Cmd+S overwrites only a native LoneStar JSON file; a piStar / `.txt` file is never silently converted, Save falls back to Save As. Opening a file or a template starts a new document (fresh undo history, otherwise undo would put the previous diagram under the new file path) and asks before discarding unsaved changes.
+- [x] `pistarCodec.ts`: extract `isLoneStarJsonDocument(raw)` from `importAnyJsonModel` native detection
+- [x] `modelStore.svelte.ts`: `filePath`, `isDirty`, `openDocument(model, path)`, `markSaved(path, contents)`, `confirmDiscardChanges()`; `initFromBackend` / `loadTemplate` start a clean document
+- [x] `backendAdapter.ts`: `writeTextFile(path, contents)` (desktop) and `confirm(message, title)` (Tauri `ask` / `window.confirm`; `dialog:default` already grants `allow-message`)
+- [x] `uiStore.svelte.ts`: pure `resolveSaveShortcut(event, isMac)` next to `resolveUiZoomShortcut`
+- [x] `Toolbar.svelte`: exported `saveDocument({ saveAs })`, Save / Save As menu items with shortcut hints, open flows via `openDocument` + discard confirm, unsaved-changes + bound file indicator
+- [x] `App.svelte`: capture-phase Ctrl/Cmd+S handler (desktop and web), commits a focused input before saving; `Canvas.svelte` file drop via `openDocument` + confirm
+- [x] Vitest coverage + README shortcut table; verify `npm run check`, `npm test`, `npm run build`
+- Review:
+  - Dirty state is `exportModelToLoneStarJson(model) !== savedContents`, not a flag set by mutations: it also catches writes outside history (title `bind:value`, drags) and goes back to clean when undo returns to the saved state. `markSaved` takes the exact string written, so an edit landing while a save is awaited stays dirty.
+  - Behaviour change: opening a file / recent / dropped file / template no longer pushes undo history (it starts a new document); unsaved work is protected by an OK/Cancel confirm instead. The AI agent's `replaceModel` is still an undoable edit.
+  - The save shortcut is a capture-phase listener in `App.svelte` (web + desktop, `e.repeat` ignored) that blurs a focused input first so `onchange` / inline-rename edits are committed before saving.
+  - Tests: Vitest 36 passed (was 28; +8: shortcut resolution, native-JSON detection, open/edit/undo/save/in-flight/template dirty transitions, wiring). New tests failed before the implementation.
+  - Verified: `npm run check`, `npm test`, `npm run build` (0 warnings). Not verified in a running UI (no browser automation in this session): manual check pending.
+
+## Phase 18: Close Guard for Unsaved Changes & Toolbar Save Button
+- Design: closing reuses `modelStore.confirmDiscardChanges()`. Desktop: `getCurrentWindow().onCloseRequested` (with a JS listener Tauri prevents the native close and the JS side calls `destroy()`, which needs `core:window:allow-destroy`). Web Studio: `beforeunload` (the browser shows its own generic prompt). macOS Cmd+Q: tao 0.37 has no `applicationShouldTerminate` and the predefined Quit item calls `-[NSApp terminate:]`, which never emits `CloseRequested`; the default menu keeps every item but Quit is replaced by a custom `CmdOrCtrl+Q` item that calls `window.close()`, so it goes through the same guard.
+- [x] `backendAdapter.ts`: `onCloseRequested(shouldClose)` (desktop only, returns unlisten)
+- [x] `App.svelte`: register the desktop close guard and the web `beforeunload` guard, both driven by `modelStore.isDirty`
+- [x] `src-tauri/capabilities/default.json`: `core:window:allow-destroy`
+- [x] `src-tauri/src/lib.rs`: macOS menu with guarded Quit (`CmdOrCtrl+Q` → `close()` on the windows)
+- [x] `Toolbar.svelte`: Save button (floppy SVG, `tb-action-icon` / `tb-icon-svg` like Settings) next to Open, accent when dirty, shortcut in tooltip
+- [x] Vitest (`confirmDiscardChanges` asks only when dirty, wiring) + README; verify `npm run check`, `npm test`, `npm run build`, `cargo fmt`, `cargo clippy`, `cargo test`
+- Review:
+  - Window close: `backendAdapter.onCloseRequested` + `modelStore.confirmDiscardChanges()`; Web Studio: `beforeunload` registered only outside Tauri (WKWebView has no beforeunload UI).
+  - Cmd+Q: the Quit item of `Menu::default` is located by its predefined text (`Quit …`) and replaced in place by `CmdOrCtrl+Q` → `window.close()`; if Tauri ever changes the default menu and the item is not found, the menu is left as is (no guard on Cmd+Q, nothing breaks). Dock → Quit and logout still terminate without asking (tao 0.37 has no `applicationShouldTerminate`).
+  - Tauri keeps JS listeners across page reloads (no cleanup on page load in 2.12.5): a stale close listener only means the native close is deferred to the reloaded page's own listener. Reloads only happen in dev (HMR).
+  - Tests: Vitest 39 passed (+3: confirm asked only when dirty and answer honoured, close-guard wiring incl. `core:window:allow-destroy` and the macOS Quit item, Save button). Rust: fmt clean, clippy 0 warnings, 18 + 2 tests passed.
+  - Smoke: `tauri dev` started with the custom menu installed (setup returned Ok, no panic). Interactive close / Cmd+Q / Save button not exercised by me: manual check pending.

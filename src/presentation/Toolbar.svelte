@@ -1,11 +1,12 @@
 <script lang="ts">
   import { modelStore } from '../application/modelStore.svelte';
   import {
+    extractFileName,
     isFileNotFoundError,
     recentProjectsStore,
     type RecentProjectEntry,
   } from '../application/recentProjectsStore.svelte';
-  import { uiStore } from '../application/uiStore.svelte';
+  import { isMacPlatform, uiStore } from '../application/uiStore.svelte';
   import { updateStore } from '../application/updateStore.svelte';
   import { backendAdapter, isTauriRuntime } from '../infrastructure/backendAdapter';
   import {
@@ -13,7 +14,10 @@
     renderHighResPngBase64,
     sanitizeFilename,
   } from '../infrastructure/exportService';
-  import { exportModelToLoneStarJson } from '../infrastructure/pistarCodec';
+  import {
+    exportModelToLoneStarJson,
+    isLoneStarJsonDocument,
+  } from '../infrastructure/pistarCodec';
   import CowboyPandaIcon from './shapes/CowboyPandaIcon.svelte';
 
   interface Props {
@@ -35,6 +39,13 @@
   let templateDropdownRef: HTMLDivElement | null = $state(null);
   let recentMenuOpen = $state(false);
   let recentDropdownRef: HTMLDivElement | null = $state(null);
+  let saving = $state(false);
+
+  const saveShortcutHint = isMacPlatform() ? '⌘S' : 'Ctrl+S';
+  const saveAsShortcutHint = isMacPlatform() ? '⇧⌘S' : 'Ctrl+Shift+S';
+  const boundFileName = $derived(
+    modelStore.filePath ? extractFileName(modelStore.filePath) : null,
+  );
 
   const selectedTemplateLabel = $derived(
     TEMPLATE_OPTIONS.find((opt) => opt.value === selectedTemplate)?.label ?? 'Choose Template…'
@@ -78,6 +89,7 @@
 
   async function selectTemplate(val: string) {
     templateMenuOpen = false;
+    if (!(await modelStore.confirmDiscardChanges())) return;
     selectedTemplate = val;
     await modelStore.loadTemplate(val);
     uiStore.selection = null;
@@ -87,11 +99,17 @@
 
   async function handleOpenJson() {
     if (isTauriRuntime()) {
+      if (!(await modelStore.confirmDiscardChanges())) return;
       try {
         const picked = await backendAdapter.openJsonFileWithPathFromDialog();
         if (!picked) return;
         const loaded = await backendAdapter.importJsonModel(picked.contents);
-        modelStore.replaceModel(loaded);
+        // Only a native LoneStar JSON file is bound for Save: piStar / .txt files are never
+        // silently rewritten in another format, Save asks for a destination instead.
+        modelStore.openDocument(
+          loaded,
+          isLoneStarJsonDocument(picked.contents) ? picked.path : null,
+        );
         uiStore.selection = null;
         recentProjectsStore.recordProject(picked.path, loaded.name);
         setTimeout(onFitToScreen, 20);
@@ -106,10 +124,11 @@
 
   async function handleOpenRecentProject(entry: RecentProjectEntry) {
     recentMenuOpen = false;
+    if (!(await modelStore.confirmDiscardChanges())) return;
     try {
       const raw = await backendAdapter.readJsonFileFromPath(entry.path);
       const loaded = await backendAdapter.importJsonModel(raw);
-      modelStore.replaceModel(loaded);
+      modelStore.openDocument(loaded, isLoneStarJsonDocument(raw) ? entry.path : null);
       uiStore.selection = null;
       recentProjectsStore.recordProject(entry.path, loaded.name);
       setTimeout(onFitToScreen, 20);
@@ -135,9 +154,12 @@
     const file = input.files?.[0];
     if (!file) return;
     try {
+      // Asked after picking: a dialog before `click()` would consume the user activation the
+      // browser requires to open the file picker.
+      if (!(await modelStore.confirmDiscardChanges())) return;
       const raw = await file.text();
       const loaded = await backendAdapter.importJsonModel(raw);
-      modelStore.replaceModel(loaded);
+      modelStore.openDocument(loaded);
       uiStore.selection = null;
       setTimeout(onFitToScreen, 20);
       uiStore.notify(`Loaded "${loaded.name}"`, 'success');
@@ -219,16 +241,42 @@
     }
   }
 
-  async function handleExportLoneStarJson() {
-    const json = exportModelToLoneStarJson(modelStore.model);
-    const filename = `${sanitizeFilename(modelStore.model.name)}.lonestar.json`;
-    await saveModelDocument(
-      filename,
-      'LoneStar JSON',
-      ['json'],
-      json,
-      'Saved LoneStar JSON',
-    );
+  /**
+   * Save (Ctrl/Cmd+S) overwrites the bound LoneStar JSON file. Save As (Ctrl/Cmd+Shift+S), an
+   * untitled diagram, a diagram opened from piStar / .txt and the Web Studio ask where to save.
+   */
+  export async function saveDocument(options: { saveAs?: boolean } = {}): Promise<void> {
+    if (saving) return;
+    saving = true;
+    uiStore.exportMenuOpen = false;
+    const contents = exportModelToLoneStarJson(modelStore.model);
+    const boundPath = options.saveAs ? null : modelStore.filePath;
+    try {
+      let savedPath: string | null;
+      if (boundPath) {
+        await backendAdapter.writeTextFile(boundPath, contents);
+        savedPath = boundPath;
+      } else {
+        savedPath = await backendAdapter.saveFile(
+          `${sanitizeFilename(modelStore.model.name)}.lonestar.json`,
+          'LoneStar JSON',
+          ['json'],
+          contents,
+          false,
+        );
+      }
+      if (!savedPath) return;
+      const desktop = isTauriRuntime();
+      modelStore.markSaved(desktop ? savedPath : null, contents);
+      if (desktop) {
+        recentProjectsStore.recordProject(savedPath, modelStore.model.name);
+      }
+      uiStore.notify(`Saved "${extractFileName(savedPath)}"`, 'success');
+    } catch (err) {
+      uiStore.notify(`Save failed: ${String(err)}`, 'error');
+    } finally {
+      saving = false;
+    }
   }
 
   async function handleExportPiStarJson() {
@@ -269,6 +317,18 @@
       <div class="brand-meta">
         <div class="brand-top-row">
           <span class="brand-title">LoneStar</span>
+          {#if boundFileName}
+            <span class="doc-file-name" title={modelStore.filePath}>{boundFileName}</span>
+          {/if}
+          {#if modelStore.isDirty}
+            <span
+              class="doc-unsaved"
+              title={`Unsaved changes. Press ${saveShortcutHint} to save.`}
+            >
+              <span class="doc-unsaved-dot" aria-hidden="true"></span>
+              Unsaved
+            </span>
+          {/if}
         </div>
         <input
           class="doc-title-input"
@@ -330,6 +390,39 @@
         style="display: none;"
         onchange={handleBrowserFileChange}
       />
+
+      <button
+        type="button"
+        class="tb-btn hero-control save-btn"
+        class:dirty={modelStore.isDirty}
+        disabled={saving}
+        onclick={() => saveDocument()}
+        title={modelStore.filePath
+          ? `Save to ${modelStore.filePath} (${saveShortcutHint})`
+          : `Save LoneStar JSON (${saveShortcutHint})`}
+        aria-label="Save diagram"
+      >
+        <span class="tb-action-icon" aria-hidden="true">
+          <svg
+            class="tb-icon-svg"
+            viewBox="0 0 24 24"
+            width="18"
+            height="18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
+            />
+            <path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" />
+            <path d="M7 3v4a1 1 0 0 0 1 1h7" />
+          </svg>
+        </span>
+        <span>Save</span>
+      </button>
 
       {#if isTauriRuntime()}
         <div class="recent-dropdown" bind:this={recentDropdownRef}>
@@ -497,10 +590,22 @@
           <div class="dropdown-section">Model Document</div>
           <button
             type="button"
-            class="menu-action"
-            onclick={handleExportLoneStarJson}
+            class="menu-action menu-action-shortcut"
+            disabled={saving}
+            onclick={() => saveDocument()}
+            title={modelStore.filePath ?? 'Choose where to save the LoneStar JSON file'}
           >
-            Save LoneStar JSON (.json)
+            <span>{boundFileName ? `Save "${boundFileName}"` : 'Save LoneStar JSON (.json)'}</span>
+            <kbd>{saveShortcutHint}</kbd>
+          </button>
+          <button
+            type="button"
+            class="menu-action menu-action-shortcut"
+            disabled={saving}
+            onclick={() => saveDocument({ saveAs: true })}
+          >
+            <span>Save As LoneStar JSON…</span>
+            <kbd>{saveAsShortcutHint}</kbd>
           </button>
           <button
             type="button"
@@ -646,6 +751,36 @@
     color: var(--accent-primary);
   }
 
+  .doc-file-name {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .doc-unsaved {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-primary);
+    font-size: 10.5px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .doc-unsaved-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+
   .doc-title-input {
     border: 1px solid transparent;
     background: transparent;
@@ -687,7 +822,8 @@
 
   .theme-btn,
   .agent-btn,
-  .settings-btn {
+  .settings-btn,
+  .save-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -717,8 +853,19 @@
 
   .theme-btn > span:not(.tb-action-icon),
   .agent-btn > span:not(.tb-action-icon),
+  .save-btn > span:not(.tb-action-icon),
   .settings-btn > span:not(.tb-action-icon):not(.update-dot) {
     text-box: trim-both cap alphabetic;
+  }
+
+  .save-btn {
+    color: var(--text-primary);
+  }
+
+  .save-btn.dirty {
+    background: var(--accent-soft);
+    border-color: var(--accent-primary) !important;
+    color: var(--accent-primary);
   }
 
   .agent-btn.active-agent {
@@ -862,9 +1009,35 @@
     font-weight: 600;
   }
 
-  .menu-action:hover {
+  .menu-action:hover:not(:disabled) {
     border-color: var(--accent-primary);
     background: var(--bg-hover);
+  }
+
+  .menu-action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .menu-action-shortcut {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .menu-action-shortcut > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .menu-action-shortcut kbd {
+    flex-shrink: 0;
+    font-family: inherit;
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-secondary);
   }
 
   .template-dropdown {

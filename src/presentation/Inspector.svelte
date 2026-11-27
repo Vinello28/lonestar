@@ -76,6 +76,31 @@
     if (err) uiStore.notify(err, 'error');
   }
 
+  function changeActorKind(actorId: string, kind: ActorKind) {
+    const err = modelStore.updateActor(actorId, { kind });
+    if (err) uiStore.notify(err, 'error');
+  }
+
+  function changeElementKind(elementId: string, kind: ElementKind) {
+    const err = modelStore.updateElement(elementId, { kind });
+    if (err) uiStore.notify(err, 'error');
+  }
+
+  function handleElementOwnerChange(
+    e: Event,
+    elementId: string,
+    previousValue: string | null,
+  ) {
+    const select = e.currentTarget as HTMLSelectElement;
+    const err = modelStore.updateElement(elementId, {
+      actorId: select.value || null,
+    });
+    if (err) {
+      select.value = previousValue ?? '';
+      uiStore.notify(err, 'error');
+    }
+  }
+
   function handleDepAnchorChange(
     e: Event,
     depId: string,
@@ -242,10 +267,7 @@
             type="button"
             class="pill"
             class:active={selectedActor.kind === k}
-            onclick={() =>
-              modelStore.updateActor(selectedActor!.id, {
-                kind: k as ActorKind,
-              })}
+            onclick={() => changeActorKind(selectedActor!.id, k as ActorKind)}
           >
             {k}
           </button>
@@ -307,10 +329,7 @@
             type="button"
             class="pill"
             class:active={selectedElement.kind === k}
-            onclick={() =>
-              modelStore.updateElement(selectedElement!.id, {
-                kind: k as ElementKind,
-              })}
+            onclick={() => changeElementKind(selectedElement!.id, k as ElementKind)}
           >
             {k}
           </button>
@@ -322,10 +341,12 @@
       <span>Owner Actor Boundary</span>
       <select
         value={selectedElement.actorId ?? ''}
-        onchange={(e) => {
-          const val = (e.target as HTMLSelectElement).value || null;
-          modelStore.updateElement(selectedElement!.id, { actorId: val });
-        }}
+        onchange={(e) =>
+          handleElementOwnerChange(
+            e,
+            selectedElement!.id,
+            selectedElement!.actorId,
+          )}
       >
         <option value="">(Unassigned Orphan)</option>
         {#each modelStore.model.actors as a}

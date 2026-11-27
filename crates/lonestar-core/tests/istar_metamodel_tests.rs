@@ -51,10 +51,45 @@ fn actor_isa_and_participates_in_constraints() {
         ModelService::add_link(&mut model, "l2", "ag1", "r2", LinkKind::ParticipatesIn).is_ok()
     );
 
-    // Cycle check: r1 -> ag1 would create r1 -> ag1 -> r2 -> r1
-    let err = ModelService::validate_connection(&model, "r1", "ag1", LinkKind::ParticipatesIn)
-        .unwrap_err();
-    assert!(err.to_string().contains("cycle"));
+    // r1 -> ag1 closes the loop r1 -> ag1 -> r2 -> r1, but that loop mixes participates-in and
+    // is-a edges. The guide (section 8) forbids is-a cycles and participates-in cycles
+    // separately, so this link is conformant.
+    assert!(
+        ModelService::validate_connection(&model, "r1", "ag1", LinkKind::ParticipatesIn).is_ok()
+    );
+}
+
+#[test]
+fn actor_link_cycles_are_checked_per_link_kind() {
+    // Guide section 8: "There should be no is-a cycles" and "There should be no
+    // participates-in cycles" are two independent constraints.
+    for kind in [LinkKind::IsA, LinkKind::ParticipatesIn] {
+        let mut model = DiagramModel::new("m-cyc", "Pure cycles");
+        for id in ["a1", "a2", "a3"] {
+            ModelService::add_actor(&mut model, id, id, ActorKind::Actor, 0.0, 0.0);
+        }
+        assert!(ModelService::add_link(&mut model, "l1", "a1", "a2", kind).is_ok());
+        assert!(ModelService::add_link(&mut model, "l2", "a2", "a3", kind).is_ok());
+        let err = ModelService::validate_connection(&model, "a3", "a1", kind).unwrap_err();
+        assert!(
+            err.to_string().contains("cycle"),
+            "{kind:?} cycle must be rejected, got: {err}"
+        );
+    }
+
+    // A loop that mixes both kinds contains neither an is-a cycle nor a participates-in cycle.
+    let mut model = DiagramModel::new("m-mixed", "Mixed loop");
+    for id in ["a1", "a2", "a3"] {
+        ModelService::add_actor(&mut model, id, id, ActorKind::Actor, 0.0, 0.0);
+    }
+    assert!(ModelService::add_link(&mut model, "l1", "a1", "a2", LinkKind::IsA).is_ok());
+    assert!(ModelService::add_link(&mut model, "l2", "a2", "a3", LinkKind::ParticipatesIn).is_ok());
+    assert!(ModelService::add_link(&mut model, "l3", "a3", "a1", LinkKind::ParticipatesIn).is_ok());
+    let errors: Vec<_> = ModelService::validate(&model)
+        .into_iter()
+        .filter(|i| i.severity == ValidationSeverity::Error)
+        .collect();
+    assert!(errors.is_empty(), "mixed loop is conformant: {errors:?}");
 }
 
 #[test]
@@ -779,20 +814,11 @@ fn strict_istar2_integrity_rules_enforced() {
         lonestar_core::domain::DomainError::Metamodel(MetamodelError::DuplicateContributionLink)
     ));
 
-    // 5. Contribution cycle between Qualities rejected
-    assert!(ModelService::add_link(
-        &mut model,
-        "lc_q1_q2",
-        "q1",
-        "q2",
-        LinkKind::Contribution {
-            value: ContributionValue::Help
-        }
-    )
-    .is_ok());
-    let cyc_err = ModelService::validate_connection(
+    // 5. A quality cannot contribute to itself (guide section 8), but mutual contributions
+    //    between two qualities are conformant: the guide does not forbid contribution cycles.
+    let self_err = ModelService::validate_connection(
         &model,
-        "q2",
+        "q1",
         "q1",
         LinkKind::Contribution {
             value: ContributionValue::Help,
@@ -800,9 +826,26 @@ fn strict_istar2_integrity_rules_enforced() {
     )
     .unwrap_err();
     assert!(matches!(
-        cyc_err,
-        lonestar_core::domain::DomainError::Metamodel(MetamodelError::ContributionCycle)
+        self_err,
+        lonestar_core::domain::DomainError::Metamodel(MetamodelError::SelfLoopNotAllowed)
     ));
+
+    let mut mutual = model.clone();
+    for (id, src, dst) in [("lm1", "q1", "q2"), ("lm2", "q2", "q1")] {
+        assert!(ModelService::add_link(
+            &mut mutual,
+            id,
+            src,
+            dst,
+            LinkKind::Contribution {
+                value: ContributionValue::Help
+            }
+        )
+        .is_ok());
+    }
+    assert!(!ModelService::validate(&mutual)
+        .iter()
+        .any(|i| i.severity == ValidationSeverity::Error && i.entity_id.as_deref() == Some("lm2")));
 
     // 6. Depender element cannot be refined or contributed to (both orders)
     let dep_on_refined = Dependency {
@@ -956,4 +999,220 @@ fn agent_preserves_explicit_goal_to_task_refinement_and_infers_qualification() {
         l.source_id == qual_id && l.target_id == task_id && l.link_kind == LinkKind::Qualification
     }));
     assert!(report.validation_issues.is_empty());
+}
+
+fn error_issues(model: &DiagramModel) -> Vec<String> {
+    ModelService::validate(model)
+        .into_iter()
+        .filter(|i| i.severity == ValidationSeverity::Error)
+        .map(|i| format!("{}: {}", i.rule, i.message))
+        .collect()
+}
+
+/// Customer (role) wants "Buy", refined by "Pay" and "Browse"; Bank (role) is a second actor
+/// that Customer is-a. Both refinement children and the is-a link constrain direct writes.
+fn agent_guard_fixture() -> DiagramModel {
+    let mut model = DiagramModel::new("m-guard", "Direct write guard");
+    let ops = vec![
+        AgentOperation::AddActor {
+            name: "Customer".to_string(),
+            kind: ActorKind::Role,
+        },
+        AgentOperation::AddActor {
+            name: "Bank".to_string(),
+            kind: ActorKind::Role,
+        },
+        AgentOperation::AddElement {
+            actor: "Customer".to_string(),
+            name: "Buy".to_string(),
+            kind: ElementKind::Goal,
+        },
+        AgentOperation::AddElement {
+            actor: "Customer".to_string(),
+            name: "Pay".to_string(),
+            kind: ElementKind::Task,
+        },
+        AgentOperation::AddElement {
+            actor: "Customer".to_string(),
+            name: "Browse".to_string(),
+            kind: ElementKind::Task,
+        },
+        AgentOperation::AddLink {
+            source: "Pay".to_string(),
+            target: "Buy".to_string(),
+            actor: Some("Customer".to_string()),
+            kind: "andRefinement".to_string(),
+            value: None,
+        },
+        AgentOperation::AddLink {
+            source: "Browse".to_string(),
+            target: "Buy".to_string(),
+            actor: Some("Customer".to_string()),
+            kind: "andRefinement".to_string(),
+            value: None,
+        },
+        AgentOperation::AddLink {
+            source: "Customer".to_string(),
+            target: "Bank".to_string(),
+            actor: None,
+            kind: "isA".to_string(),
+            value: None,
+        },
+    ];
+    let report = execute_agent_operations(&mut model, &ops);
+    assert!(
+        report.errors.is_empty(),
+        "fixture setup: {:?}",
+        report.errors
+    );
+    assert!(
+        error_issues(&model).is_empty(),
+        "fixture must be conformant"
+    );
+    model
+}
+
+#[test]
+fn agent_rejects_reparenting_that_creates_cross_boundary_link() {
+    // Moving "Pay" into Bank would turn the refinement Pay -> Buy into a cross-boundary link.
+    let mut model = agent_guard_fixture();
+    let customer_id = model
+        .actors
+        .iter()
+        .find(|a| a.name == "Customer")
+        .unwrap()
+        .id
+        .clone();
+    let report = execute_agent_operations(
+        &mut model,
+        &[AgentOperation::AddLink {
+            source: "Bank".to_string(),
+            target: "Pay".to_string(),
+            actor: None,
+            kind: String::new(),
+            value: None,
+        }],
+    );
+    let pay = model.elements.iter().find(|e| e.name == "Pay").unwrap();
+    assert_eq!(pay.actor_id.as_deref(), Some(customer_id.as_str()));
+    assert!(!report.errors.is_empty(), "rejected write must be reported");
+    assert!(
+        error_issues(&model).is_empty(),
+        "{:?}",
+        error_issues(&model)
+    );
+}
+
+#[test]
+fn agent_rejects_element_kind_change_that_invalidates_links() {
+    // Turning the refinement child "Pay" into a Resource would leave a Resource -> Goal refinement.
+    let mut model = agent_guard_fixture();
+    let report = execute_agent_operations(
+        &mut model,
+        &[AgentOperation::UpdateElement {
+            element: "Pay".to_string(),
+            actor: Some("Customer".to_string()),
+            new_name: None,
+            kind: Some(ElementKind::Resource),
+        }],
+    );
+    let pay = model.elements.iter().find(|e| e.name == "Pay").unwrap();
+    assert_eq!(pay.kind, ElementKind::Task);
+    assert!(!report.errors.is_empty(), "rejected write must be reported");
+    assert!(
+        error_issues(&model).is_empty(),
+        "{:?}",
+        error_issues(&model)
+    );
+}
+
+#[test]
+fn agent_rejects_actor_kind_change_that_invalidates_actor_links() {
+    // Turning the is-a source "Customer" into an Agent would leave an Agent is-a link.
+    let mut model = agent_guard_fixture();
+    let report = execute_agent_operations(
+        &mut model,
+        &[AgentOperation::UpdateActor {
+            actor: "Customer".to_string(),
+            new_name: None,
+            kind: Some(ActorKind::Agent),
+            collapsed: None,
+        }],
+    );
+    let customer = model.actors.iter().find(|a| a.name == "Customer").unwrap();
+    assert_eq!(customer.kind, ActorKind::Role);
+    assert!(!report.errors.is_empty(), "rejected write must be reported");
+    assert!(
+        error_issues(&model).is_empty(),
+        "{:?}",
+        error_issues(&model)
+    );
+}
+
+#[test]
+fn agent_direct_writes_still_apply_when_conformant() {
+    let mut model = agent_guard_fixture();
+    ModelService::add_element(
+        &mut model,
+        "lonely",
+        "Lonely",
+        ElementKind::Goal,
+        None,
+        0.0,
+        0.0,
+    );
+    let bank_id = model
+        .actors
+        .iter()
+        .find(|a| a.name == "Bank")
+        .unwrap()
+        .id
+        .clone();
+
+    // Renaming an element that is already an orphan must not be blocked by its pre-existing error.
+    let report = execute_agent_operations(
+        &mut model,
+        &[AgentOperation::UpdateElement {
+            element: "Lonely".to_string(),
+            actor: None,
+            new_name: Some("Solo".to_string()),
+            kind: None,
+        }],
+    );
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    assert!(model.elements.iter().any(|e| e.name == "Solo"));
+
+    // Adopting the link-free orphan into Bank is conformant and clears its boundary error.
+    let report = execute_agent_operations(
+        &mut model,
+        &[AgentOperation::AddLink {
+            source: "Bank".to_string(),
+            target: "Solo".to_string(),
+            actor: None,
+            kind: String::new(),
+            value: None,
+        }],
+    );
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let solo = model.elements.iter().find(|e| e.name == "Solo").unwrap();
+    assert_eq!(solo.actor_id.as_deref(), Some(bank_id.as_str()));
+
+    // A link-free element may change kind freely.
+    let report = execute_agent_operations(
+        &mut model,
+        &[AgentOperation::UpdateElement {
+            element: "Solo".to_string(),
+            actor: Some("Bank".to_string()),
+            new_name: None,
+            kind: Some(ElementKind::Resource),
+        }],
+    );
+    assert!(report.errors.is_empty(), "{:?}", report.errors);
+    let solo = model.elements.iter().find(|e| e.name == "Solo").unwrap();
+    assert_eq!(solo.kind, ElementKind::Resource);
+    assert!(
+        error_issues(&model).is_empty(),
+        "{:?}",
+        error_issues(&model)
+    );
 }

@@ -104,7 +104,7 @@ lonestar/
 | --- | --- | --- |
 | **Actors** | `Actor`, `Agent`, `Role` | Expandable/collapsible SR boundaries; elements automatically attach/detach when dragged across boundaries |
 | **Intentional Elements** | `Goal`, `Quality`, `Task`, `Resource` | Official iStar 2.0 geometry (pill, cloud curve, hexagon, rectangle) with auto-wrapped pure SVG labels |
-| **Actor Links** | `IsA`, `ParticipatesIn` | `IsA` restricted to same-kind `Role → Role` or `Actor → Actor`; single structural link per actor pair; cycle prevention |
+| **Actor Links** | `IsA`, `ParticipatesIn` | `IsA` restricted to same-kind `Role → Role` or `Actor → Actor`; single structural link per actor pair; no is-a cycles and no participates-in cycles (checked per kind) |
 | **SR Internal Links** | `AndRefinement`, `OrRefinement`, `NeededBy`, `Contribution` (`make`/`help`/`hurt`/`break`), `Qualification` | Same-boundary enforcement, acyclicity on refinements, `Resource → Task` (`NeededBy`), `* → Quality` (`Contribution`), `Quality → Goal/Task/Resource` (`Qualification`) |
 | **Social Dependencies** | `Dependency` (Depender, Dependum, Dependee) | Validated distinct actor ownership for depender and dependee, element-actor containment, `D` semicircle markers |
 
@@ -118,6 +118,10 @@ lonestar/
 | `F` / `0` | Fit diagram to screen / Reset zoom & pan |
 | `Space` + Drag | Pan canvas |
 | `Ctrl/Cmd + Z` / `Y` | Undo / Redo (up to 60 steps) |
+| `Ctrl/Cmd + S` | Save: overwrites the open LoneStar JSON file; asks where to save for a new diagram, a piStar / `.txt` source, or in the Web Studio (download). An **Unsaved** badge next to the title marks unsaved changes |
+| `Ctrl/Cmd + Shift + S` | Save As LoneStar JSON |
+
+The **Save** button next to *Open* does the same as `Ctrl/Cmd + S` and turns orange while there are unsaved changes. Closing with unsaved changes asks for confirmation first: the window (red button, `Cmd + W`, `Alt + F4`, and on macOS `Cmd + Q`, whose menu item is replaced so it closes the window instead of terminating the app) and the browser tab in the Web Studio.
 | `Delete` / `Backspace` | Delete selected Actor, Element, Link, or Dependency |
 | `Double-click` | Inline rename any Actor, Element, or Dependum |
 
